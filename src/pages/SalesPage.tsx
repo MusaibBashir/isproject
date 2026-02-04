@@ -19,7 +19,7 @@ interface SaleItem {
 }
 
 export function SalesPage() {
-    const { getInventoryBySku, recordSale, inventory } = useInventory();
+    const { getInventoryBySku, recordSale, inventory, getCustomerByPhone } = useInventory();
     const [entryMode, setEntryMode] = useState<"barcode" | "manual">("manual");
     const [items, setItems] = useState<SaleItem[]>([]);
 
@@ -35,6 +35,29 @@ export function SalesPage() {
     const [customerPhone, setCustomerPhone] = useState("");
     const [customerEmail, setCustomerEmail] = useState("");
     const [additionalNotes, setAdditionalNotes] = useState("");
+    const [isLookingUpCustomer, setIsLookingUpCustomer] = useState(false);
+
+    // Handle phone number change with auto-lookup
+    const handlePhoneChange = async (phone: string) => {
+        setCustomerPhone(phone);
+
+        // Only lookup when phone has reasonable length (10+ digits)
+        if (phone.replace(/\D/g, '').length >= 10) {
+            setIsLookingUpCustomer(true);
+            try {
+                const customer = await getCustomerByPhone(phone);
+                if (customer) {
+                    setCustomerName(customer.name);
+                    setCustomerEmail(customer.email || "");
+                    toast.success(`Customer found: ${customer.name}`);
+                }
+            } catch (err) {
+                console.error('Error looking up customer:', err);
+            } finally {
+                setIsLookingUpCustomer(false);
+            }
+        }
+    };
 
     const handleAddItem = () => {
         if (!selectedSku) {
@@ -289,6 +312,22 @@ export function SalesPage() {
                             <CardTitle className="text-lg">Customer Details</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
+                            {/* Phone Number First - for customer lookup */}
+                            <div className="space-y-2">
+                                <Label htmlFor="customerPhone">
+                                    Phone Number *
+                                    {isLookingUpCustomer && <span className="ml-2 text-sm text-blue-500">(Looking up...)</span>}
+                                </Label>
+                                <Input
+                                    id="customerPhone"
+                                    type="tel"
+                                    value={customerPhone}
+                                    onChange={(e) => handlePhoneChange(e.target.value)}
+                                    placeholder="Enter phone number to auto-fill customer"
+                                />
+                                <p className="text-xs text-gray-500">Enter phone to find existing customer or create new</p>
+                            </div>
+
                             <div className="space-y-2">
                                 <Label htmlFor="customerName">Customer Name *</Label>
                                 <Input
@@ -296,17 +335,6 @@ export function SalesPage() {
                                     value={customerName}
                                     onChange={(e) => setCustomerName(e.target.value)}
                                     placeholder="Enter customer name"
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="customerPhone">Phone Number</Label>
-                                <Input
-                                    id="customerPhone"
-                                    type="tel"
-                                    value={customerPhone}
-                                    onChange={(e) => setCustomerPhone(e.target.value)}
-                                    placeholder="Enter phone number"
                                 />
                             </div>
 
