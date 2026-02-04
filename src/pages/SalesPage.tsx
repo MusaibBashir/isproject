@@ -103,7 +103,7 @@ export function SalesPage() {
         }
     };
 
-    const handleCompleteSale = () => {
+    const handleCompleteSale = async () => {
         if (items.length === 0) {
             toast.error("Please add at least one item");
             return;
@@ -118,7 +118,7 @@ export function SalesPage() {
         const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
         // Record the sale and update inventory
-        const success = recordSale({
+        const success = await recordSale({
             items: items.map(item => ({
                 sku: item.sku,
                 itemName: item.name,
@@ -167,8 +167,8 @@ export function SalesPage() {
                                 <button
                                     onClick={() => setEntryMode("manual")}
                                     className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${entryMode === "manual"
-                                            ? "bg-white text-gray-900 shadow-sm"
-                                            : "text-gray-600 hover:text-gray-900"
+                                        ? "bg-white text-gray-900 shadow-sm"
+                                        : "text-gray-600 hover:text-gray-900"
                                         }`}
                                 >
                                     <Keyboard className="w-4 h-4" />
@@ -177,8 +177,8 @@ export function SalesPage() {
                                 <button
                                     onClick={() => setEntryMode("barcode")}
                                     className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${entryMode === "barcode"
-                                            ? "bg-white text-gray-900 shadow-sm"
-                                            : "text-gray-600 hover:text-gray-900"
+                                        ? "bg-white text-gray-900 shadow-sm"
+                                        : "text-gray-600 hover:text-gray-900"
                                         }`}
                                 >
                                     <Scan className="w-4 h-4" />

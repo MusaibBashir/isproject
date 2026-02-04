@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
+import { supabase, isSupabaseAvailable } from "../lib/supabaseClient";
 
 export interface InventoryItem {
   id: string;
@@ -13,14 +14,16 @@ export interface InventoryItem {
   lastUpdated: string;
 }
 
+export interface SaleItem {
+  sku: string;
+  itemName: string;
+  quantity: number;
+  price: number;
+}
+
 export interface SaleRecord {
   id: string;
-  items: Array<{
-    sku: string;
-    itemName: string;
-    quantity: number;
-    price: number;
-  }>;
+  items: SaleItem[];
   customerName: string;
   customerPhone?: string;
   customerEmail?: string;
@@ -28,502 +31,390 @@ export interface SaleRecord {
   date: string;
 }
 
+export interface Customer {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  createdAt: string;
+}
+
 interface InventoryContextType {
   inventory: InventoryItem[];
   salesHistory: SaleRecord[];
-  addInventoryItem: (item: Omit<InventoryItem, "id" | "dateAdded" | "lastUpdated">) => void;
-  updateInventoryQuantity: (sku: string, quantityChange: number) => boolean;
+  customers: Customer[];
+  isLoading: boolean;
+  error: string | null;
+  addInventoryItem: (item: Omit<InventoryItem, "id" | "dateAdded" | "lastUpdated">) => Promise<boolean>;
+  updateInventoryItem: (id: string, updates: Partial<InventoryItem>) => Promise<boolean>;
+  updateInventoryQuantity: (sku: string, quantityChange: number) => Promise<boolean>;
+  deleteInventoryItem: (id: string) => Promise<boolean>;
   getInventoryBySku: (sku: string) => InventoryItem | undefined;
-  recordSale: (sale: Omit<SaleRecord, "id" | "date">) => boolean;
+  recordSale: (sale: Omit<SaleRecord, "id" | "date">) => Promise<boolean>;
+  addCustomer: (customer: Omit<Customer, "id" | "createdAt">) => Promise<Customer | null>;
   getTotalInventoryValue: () => number;
   getTotalInventoryCount: () => number;
   getLowStockItems: (threshold?: number) => InventoryItem[];
+  refreshData: () => Promise<void>;
 }
+
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
 
-// Sample initial inventory data
-const initialInventory: InventoryItem[] = [
-  {
-    id: "1",
-    sku: "SKU-001234",
-    barcode: "123456789012",
-    itemName: "Wireless Mouse",
-    category: "Electronics",
-    price: 29.99,
-    quantity: 150,
-    description: "Ergonomic wireless mouse with USB receiver",
-    dateAdded: "2024-01-15T10:00:00Z",
-    lastUpdated: "2024-01-15T10:00:00Z",
-  },
-  {
-    id: "2",
-    sku: "SKU-001235",
-    barcode: "123456789013",
-    itemName: "USB-C Cable",
-    category: "Electronics",
-    price: 12.99,
-    quantity: 300,
-    description: "6ft USB-C charging cable",
-    dateAdded: "2024-01-15T10:00:00Z",
-    lastUpdated: "2024-01-15T10:00:00Z",
-  },
-  {
-    id: "3",
-    sku: "SKU-001236",
-    barcode: "123456789014",
-    itemName: "Mechanical Keyboard",
-    category: "Electronics",
-    price: 89.99,
-    quantity: 75,
-    description: "RGB mechanical gaming keyboard",
-    dateAdded: "2024-01-15T10:00:00Z",
-    lastUpdated: "2024-01-15T10:00:00Z",
-  },
-  {
-    id: "4",
-    sku: "SKU-001237",
-    barcode: "123456789015",
-    itemName: "Laptop Stand",
-    category: "Accessories",
-    price: 34.99,
-    quantity: 45,
-    description: "Adjustable aluminum laptop stand",
-    dateAdded: "2024-01-15T10:00:00Z",
-    lastUpdated: "2024-01-15T10:00:00Z",
-  },
-  {
-    id: "5",
-    sku: "SKU-001238",
-    barcode: "123456789016",
-    itemName: "Webcam HD",
-    category: "Electronics",
-    price: 59.99,
-    quantity: 20,
-    description: "1080p HD webcam with microphone",
-    dateAdded: "2024-01-15T10:00:00Z",
-    lastUpdated: "2024-01-15T10:00:00Z",
-  },
-  {
-    id: "6",
-    sku: "SKU-001239",
-    barcode: "123456789017",
-    itemName: "Desk Lamp",
-    category: "Accessories",
-    price: 24.99,
-    quantity: 8,
-    description: "LED desk lamp with adjustable brightness",
-    dateAdded: "2024-01-15T10:00:00Z",
-    lastUpdated: "2024-01-15T10:00:00Z",
-  },
-  {
-    id: "7",
-    sku: "SKU-001240",
-    barcode: "123456789018",
-    itemName: "Phone Case",
-    category: "Accessories",
-    price: 15.99,
-    quantity: 200,
-    description: "Protective phone case with card holder",
-    dateAdded: "2024-01-15T10:00:00Z",
-    lastUpdated: "2024-01-15T10:00:00Z",
-  },
-  {
-    id: "8",
-    sku: "SKU-001241",
-    barcode: "123456789019",
-    itemName: "Bluetooth Speaker",
-    category: "Electronics",
-    price: 44.99,
-    quantity: 60,
-    description: "Portable bluetooth speaker with 12hr battery",
-    dateAdded: "2024-01-15T10:00:00Z",
-    lastUpdated: "2024-01-15T10:00:00Z",
-  },
-];
+// Empty fallback when Supabase is not available
+// Data should come from Supabase database
+const fallbackInventory: InventoryItem[] = [];
 
-// Sample initial sales history data
-const initialSalesHistory: SaleRecord[] = [
-  {
-    id: "sale-001",
-    items: [
-      {
-        sku: "SKU-001234",
-        itemName: "Wireless Mouse",
-        quantity: 2,
-        price: 29.99,
-      },
-      {
-        sku: "SKU-001235",
-        itemName: "USB-C Cable",
-        quantity: 3,
-        price: 12.99,
-      },
-    ],
-    customerName: "Priya Sharma",
-    customerPhone: "+91 98765 43210",
-    customerEmail: "priya.sharma@email.com",
-    total: 98.95,
-    date: "2026-01-28T14:30:00Z",
-  },
-  {
-    id: "sale-002",
-    items: [
-      {
-        sku: "SKU-001236",
-        itemName: "Mechanical Keyboard",
-        quantity: 1,
-        price: 89.99,
-      },
-      {
-        sku: "SKU-001237",
-        itemName: "Laptop Stand",
-        quantity: 1,
-        price: 34.99,
-      },
-    ],
-    customerName: "Rajesh Kumar",
-    customerPhone: "+91 98234 56789",
-    customerEmail: "rajesh.kumar@email.com",
-    total: 124.98,
-    date: "2026-01-27T10:15:00Z",
-  },
-  {
-    id: "sale-003",
-    items: [
-      {
-        sku: "SKU-001240",
-        itemName: "Phone Case",
-        quantity: 5,
-        price: 15.99,
-      },
-    ],
-    customerName: "Anjali Patel",
-    customerPhone: "+91 99345 67890",
-    customerEmail: "anjali.patel@email.com",
-    total: 79.95,
-    date: "2026-01-26T16:45:00Z",
-  },
-  {
-    id: "sale-004",
-    items: [
-      {
-        sku: "SKU-001238",
-        itemName: "Webcam HD",
-        quantity: 1,
-        price: 59.99,
-      },
-      {
-        sku: "SKU-001234",
-        itemName: "Wireless Mouse",
-        quantity: 1,
-        price: 29.99,
-      },
-      {
-        sku: "SKU-001235",
-        itemName: "USB-C Cable",
-        quantity: 2,
-        price: 12.99,
-      },
-    ],
-    customerName: "Vikram Singh",
-    customerPhone: "+91 97456 78901",
-    customerEmail: "vikram.singh@email.com",
-    total: 115.96,
-    date: "2026-01-25T09:20:00Z",
-  },
-  {
-    id: "sale-005",
-    items: [
-      {
-        sku: "SKU-001241",
-        itemName: "Bluetooth Speaker",
-        quantity: 2,
-        price: 44.99,
-      },
-    ],
-    customerName: "Deepika Reddy",
-    customerPhone: "+91 96567 89012",
-    customerEmail: "deepika.reddy@email.com",
-    total: 89.98,
-    date: "2026-01-24T13:00:00Z",
-  },
-  {
-    id: "sale-006",
-    items: [
-      {
-        sku: "SKU-001236",
-        itemName: "Mechanical Keyboard",
-        quantity: 1,
-        price: 89.99,
-      },
-      {
-        sku: "SKU-001234",
-        itemName: "Wireless Mouse",
-        quantity: 1,
-        price: 29.99,
-      },
-    ],
-    customerName: "Priya Sharma",
-    customerPhone: "+91 98765 43210",
-    customerEmail: "priya.sharma@email.com",
-    total: 119.98,
-    date: "2026-01-23T15:30:00Z",
-  },
-  {
-    id: "sale-007",
-    items: [
-      {
-        sku: "SKU-001239",
-        itemName: "Desk Lamp",
-        quantity: 3,
-        price: 24.99,
-      },
-      {
-        sku: "SKU-001240",
-        itemName: "Phone Case",
-        quantity: 2,
-        price: 15.99,
-      },
-    ],
-    customerName: "Arjun Menon",
-    customerPhone: "+91 95678 90123",
-    total: 106.95,
-    date: "2026-01-22T11:45:00Z",
-  },
-  {
-    id: "sale-008",
-    items: [
-      {
-        sku: "SKU-001237",
-        itemName: "Laptop Stand",
-        quantity: 2,
-        price: 34.99,
-      },
-    ],
-    customerName: "Neha Gupta",
-    customerPhone: "+91 94789 01234",
-    customerEmail: "neha.gupta@email.com",
-    total: 69.98,
-    date: "2026-01-21T14:20:00Z",
-  },
-  {
-    id: "sale-009",
-    items: [
-      {
-        sku: "SKU-001235",
-        itemName: "USB-C Cable",
-        quantity: 5,
-        price: 12.99,
-      },
-      {
-        sku: "SKU-001240",
-        itemName: "Phone Case",
-        quantity: 3,
-        price: 15.99,
-      },
-    ],
-    customerName: "Rajesh Kumar",
-    customerPhone: "+91 98234 56789",
-    customerEmail: "rajesh.kumar@email.com",
-    total: 112.92,
-    date: "2026-01-20T10:00:00Z",
-  },
-  {
-    id: "sale-010",
-    items: [
-      {
-        sku: "SKU-001238",
-        itemName: "Webcam HD",
-        quantity: 2,
-        price: 59.99,
-      },
-      {
-        sku: "SKU-001236",
-        itemName: "Mechanical Keyboard",
-        quantity: 1,
-        price: 89.99,
-      },
-    ],
-    customerName: "Kavita Desai",
-    customerPhone: "+91 93890 12345",
-    customerEmail: "kavita.desai@email.com",
-    total: 209.97,
-    date: "2026-01-19T16:10:00Z",
-  },
-  {
-    id: "sale-011",
-    items: [
-      {
-        sku: "SKU-001241",
-        itemName: "Bluetooth Speaker",
-        quantity: 1,
-        price: 44.99,
-      },
-      {
-        sku: "SKU-001239",
-        itemName: "Desk Lamp",
-        quantity: 1,
-        price: 24.99,
-      },
-    ],
-    customerName: "Anjali Patel",
-    customerPhone: "+91 99345 67890",
-    customerEmail: "anjali.patel@email.com",
-    total: 69.98,
-    date: "2026-01-18T12:30:00Z",
-  },
-  {
-    id: "sale-012",
-    items: [
-      {
-        sku: "SKU-001234",
-        itemName: "Wireless Mouse",
-        quantity: 4,
-        price: 29.99,
-      },
-    ],
-    customerName: "Vikram Singh",
-    customerPhone: "+91 97456 78901",
-    customerEmail: "vikram.singh@email.com",
-    total: 119.96,
-    date: "2026-01-17T09:45:00Z",
-  },
-  {
-    id: "sale-013",
-    items: [
-      {
-        sku: "SKU-001237",
-        itemName: "Laptop Stand",
-        quantity: 1,
-        price: 34.99,
-      },
-      {
-        sku: "SKU-001235",
-        itemName: "USB-C Cable",
-        quantity: 4,
-        price: 12.99,
-      },
-    ],
-    customerName: "Deepika Reddy",
-    customerPhone: "+91 96567 89012",
-    customerEmail: "deepika.reddy@email.com",
-    total: 86.95,
-    date: "2026-01-16T14:50:00Z",
-  },
-  {
-    id: "sale-014",
-    items: [
-      {
-        sku: "SKU-001240",
-        itemName: "Phone Case",
-        quantity: 10,
-        price: 15.99,
-      },
-    ],
-    customerName: "Priya Sharma",
-    customerPhone: "+91 98765 43210",
-    customerEmail: "priya.sharma@email.com",
-    total: 159.90,
-    date: "2026-01-15T11:20:00Z",
-  },
-  {
-    id: "sale-015",
-    items: [
-      {
-        sku: "SKU-001241",
-        itemName: "Bluetooth Speaker",
-        quantity: 1,
-        price: 44.99,
-      },
-      {
-        sku: "SKU-001238",
-        itemName: "Webcam HD",
-        quantity: 1,
-        price: 59.99,
-      },
-      {
-        sku: "SKU-001236",
-        itemName: "Mechanical Keyboard",
-        quantity: 1,
-        price: 89.99,
-      },
-    ],
-    customerName: "Rahul Joshi",
-    customerPhone: "+91 92901 23456",
-    customerEmail: "rahul.joshi@email.com",
-    total: 194.97,
-    date: "2026-01-14T15:35:00Z",
-  },
-];
 
 export function InventoryProvider({ children }: { children: ReactNode }) {
-  const [inventory, setInventory] = useState<InventoryItem[]>(initialInventory);
-  const [salesHistory, setSalesHistory] = useState<SaleRecord[]>(initialSalesHistory);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [salesHistory, setSalesHistory] = useState<SaleRecord[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const addInventoryItem = (item: Omit<InventoryItem, "id" | "dateAdded" | "lastUpdated">) => {
-    const now = new Date().toISOString();
-    const newItem: InventoryItem = {
-      ...item,
-      id: Date.now().toString(),
-      dateAdded: now,
-      lastUpdated: now,
-    };
-    setInventory((prev) => [...prev, newItem]);
+  // Convert Supabase row to InventoryItem
+  const mapInventoryRow = (row: any): InventoryItem => ({
+    id: row.id,
+    sku: row.sku,
+    barcode: row.barcode,
+    itemName: row.item_name,
+    category: row.category,
+    price: parseFloat(row.price),
+    quantity: row.quantity,
+    description: row.description,
+    dateAdded: row.date_added,
+    lastUpdated: row.last_updated,
+  });
+
+  // Convert Supabase row to Customer
+  const mapCustomerRow = (row: any): Customer => ({
+    id: row.id,
+    name: row.name,
+    phone: row.phone,
+    email: row.email,
+    createdAt: row.created_at,
+  });
+
+  // Fetch all data from Supabase
+  const fetchData = useCallback(async () => {
+    if (!isSupabaseAvailable() || !supabase) {
+      // Use fallback data
+      setInventory(fallbackInventory);
+      setSalesHistory([]);
+      setCustomers([]);
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Fetch inventory
+      const { data: inventoryData, error: inventoryError } = await supabase
+        .from('inventory')
+        .select('*')
+        .order('item_name');
+
+      if (inventoryError) throw inventoryError;
+      setInventory((inventoryData || []).map(mapInventoryRow));
+
+      // Fetch customers
+      const { data: customersData, error: customersError } = await supabase
+        .from('customers')
+        .select('*')
+        .order('name');
+
+      if (customersError) throw customersError;
+      setCustomers((customersData || []).map(mapCustomerRow));
+
+      // Fetch sales with items
+      const { data: salesData, error: salesError } = await supabase
+        .from('sales')
+        .select(`
+          id,
+          customer_name,
+          total,
+          date,
+          sale_items (
+            sku,
+            item_name,
+            quantity,
+            price
+          )
+        `)
+        .order('date', { ascending: false });
+
+      if (salesError) throw salesError;
+
+      const mappedSales: SaleRecord[] = (salesData || []).map((sale: any) => ({
+        id: sale.id,
+        customerName: sale.customer_name,
+        total: parseFloat(sale.total),
+        date: sale.date,
+        items: (sale.sale_items || []).map((item: any) => ({
+          sku: item.sku,
+          itemName: item.item_name,
+          quantity: item.quantity,
+          price: parseFloat(item.price),
+        })),
+      }));
+      setSalesHistory(mappedSales);
+
+    } catch (err: any) {
+      console.error('Error fetching data:', err);
+      setError(err.message || 'Failed to fetch data');
+      // Fallback to empty arrays on error
+      setInventory(fallbackInventory);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Initial data fetch
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Add inventory item
+  const addInventoryItem = async (
+    item: Omit<InventoryItem, "id" | "dateAdded" | "lastUpdated">
+  ): Promise<boolean> => {
+    if (!isSupabaseAvailable() || !supabase) {
+      // Fallback: add to local state
+      const newItem: InventoryItem = {
+        ...item,
+        id: Date.now().toString(),
+        dateAdded: new Date().toISOString(),
+        lastUpdated: new Date().toISOString(),
+      };
+      setInventory((prev) => [...prev, newItem]);
+      return true;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('inventory')
+        .insert({
+          sku: item.sku,
+          barcode: item.barcode,
+          item_name: item.itemName,
+          category: item.category,
+          price: item.price,
+          quantity: item.quantity,
+          description: item.description,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      setInventory((prev) => [...prev, mapInventoryRow(data)]);
+      return true;
+    } catch (err: any) {
+      console.error('Error adding inventory item:', err);
+      setError(err.message);
+      return false;
+    }
   };
 
-  const updateInventoryQuantity = (sku: string, quantityChange: number): boolean => {
-    let success = false;
-    setInventory((prev) =>
-      prev.map((item) => {
-        if (item.sku === sku) {
-          const newQuantity = item.quantity + quantityChange;
-          if (newQuantity < 0) {
-            success = false;
-            return item;
-          }
-          success = true;
-          return {
-            ...item,
-            quantity: newQuantity,
-            lastUpdated: new Date().toISOString(),
-          };
-        }
-        return item;
-      })
-    );
-    return success;
+  // Update inventory item
+  const updateInventoryItem = async (
+    id: string,
+    updates: Partial<InventoryItem>
+  ): Promise<boolean> => {
+    if (!isSupabaseAvailable() || !supabase) {
+      setInventory((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? { ...item, ...updates, lastUpdated: new Date().toISOString() }
+            : item
+        )
+      );
+      return true;
+    }
+
+    try {
+      const dbUpdates: any = {};
+      if (updates.sku !== undefined) dbUpdates.sku = updates.sku;
+      if (updates.barcode !== undefined) dbUpdates.barcode = updates.barcode;
+      if (updates.itemName !== undefined) dbUpdates.item_name = updates.itemName;
+      if (updates.category !== undefined) dbUpdates.category = updates.category;
+      if (updates.price !== undefined) dbUpdates.price = updates.price;
+      if (updates.quantity !== undefined) dbUpdates.quantity = updates.quantity;
+      if (updates.description !== undefined) dbUpdates.description = updates.description;
+
+      const { error } = await supabase
+        .from('inventory')
+        .update(dbUpdates)
+        .eq('id', id);
+
+      if (error) throw error;
+      await fetchData(); // Refresh to get updated last_updated
+      return true;
+    } catch (err: any) {
+      console.error('Error updating inventory item:', err);
+      setError(err.message);
+      return false;
+    }
   };
 
+  // Update inventory quantity
+  const updateInventoryQuantity = async (
+    sku: string,
+    quantityChange: number
+  ): Promise<boolean> => {
+    const item = inventory.find((i) => i.sku === sku);
+    if (!item) return false;
+
+    const newQuantity = item.quantity + quantityChange;
+    if (newQuantity < 0) return false;
+
+    return updateInventoryItem(item.id, { quantity: newQuantity });
+  };
+
+  // Delete inventory item
+  const deleteInventoryItem = async (id: string): Promise<boolean> => {
+    if (!isSupabaseAvailable() || !supabase) {
+      setInventory((prev) => prev.filter((item) => item.id !== id));
+      return true;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('inventory')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      setInventory((prev) => prev.filter((item) => item.id !== id));
+      return true;
+    } catch (err: any) {
+      console.error('Error deleting inventory item:', err);
+      setError(err.message);
+      return false;
+    }
+  };
+
+  // Get inventory by SKU
   const getInventoryBySku = (sku: string): InventoryItem | undefined => {
     return inventory.find((item) => item.sku === sku);
   };
 
-  const recordSale = (sale: Omit<SaleRecord, "id" | "date">): boolean => {
-    // Check if all items have sufficient stock
+  // Record sale
+  const recordSale = async (
+    sale: Omit<SaleRecord, "id" | "date">
+  ): Promise<boolean> => {
+    // Check stock availability
     for (const saleItem of sale.items) {
       const inventoryItem = getInventoryBySku(saleItem.sku);
       if (!inventoryItem || inventoryItem.quantity < saleItem.quantity) {
+        setError(`Insufficient stock for ${saleItem.itemName}`);
         return false;
       }
     }
 
-    // Deduct from inventory
-    for (const saleItem of sale.items) {
-      updateInventoryQuantity(saleItem.sku, -saleItem.quantity);
+    if (!isSupabaseAvailable() || !supabase) {
+      // Fallback: local state
+      const newSale: SaleRecord = {
+        ...sale,
+        id: Date.now().toString(),
+        date: new Date().toISOString(),
+      };
+      setSalesHistory((prev) => [newSale, ...prev]);
+      // Deduct inventory
+      for (const saleItem of sale.items) {
+        await updateInventoryQuantity(saleItem.sku, -saleItem.quantity);
+      }
+      return true;
     }
 
-    // Record the sale
-    const newSale: SaleRecord = {
-      ...sale,
-      id: Date.now().toString(),
-      date: new Date().toISOString(),
-    };
-    setSalesHistory((prev) => [newSale, ...prev]);
+    try {
+      // Insert sale
+      const { data: saleData, error: saleError } = await supabase
+        .from('sales')
+        .insert({
+          customer_name: sale.customerName,
+          total: sale.total,
+        })
+        .select()
+        .single();
 
-    return true;
+      if (saleError) throw saleError;
+
+      // Insert sale items
+      const saleItems = sale.items.map((item) => ({
+        sale_id: saleData.id,
+        sku: item.sku,
+        item_name: item.itemName,
+        quantity: item.quantity,
+        price: item.price,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('sale_items')
+        .insert(saleItems);
+
+      if (itemsError) throw itemsError;
+
+      // Deduct inventory
+      for (const saleItem of sale.items) {
+        const item = inventory.find((i) => i.sku === saleItem.sku);
+        if (item) {
+          await supabase
+            .from('inventory')
+            .update({ quantity: item.quantity - saleItem.quantity })
+            .eq('id', item.id);
+        }
+      }
+
+      // Refresh data
+      await fetchData();
+      return true;
+    } catch (err: any) {
+      console.error('Error recording sale:', err);
+      setError(err.message);
+      return false;
+    }
   };
 
+  // Add customer
+  const addCustomer = async (
+    customer: Omit<Customer, "id" | "createdAt">
+  ): Promise<Customer | null> => {
+    if (!isSupabaseAvailable() || !supabase) {
+      const newCustomer: Customer = {
+        ...customer,
+        id: Date.now().toString(),
+        createdAt: new Date().toISOString(),
+      };
+      setCustomers((prev) => [...prev, newCustomer]);
+      return newCustomer;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .insert({
+          name: customer.name,
+          phone: customer.phone,
+          email: customer.email,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      const newCustomer = mapCustomerRow(data);
+      setCustomers((prev) => [...prev, newCustomer]);
+      return newCustomer;
+    } catch (err: any) {
+      console.error('Error adding customer:', err);
+      setError(err.message);
+      return null;
+    }
+  };
+
+  // Utility functions
   const getTotalInventoryValue = (): number => {
     return inventory.reduce((total, item) => total + item.price * item.quantity, 0);
   };
@@ -536,18 +427,29 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     return inventory.filter((item) => item.quantity <= threshold);
   };
 
+  const refreshData = async (): Promise<void> => {
+    await fetchData();
+  };
+
   return (
     <InventoryContext.Provider
       value={{
         inventory,
         salesHistory,
+        customers,
+        isLoading,
+        error,
         addInventoryItem,
+        updateInventoryItem,
         updateInventoryQuantity,
+        deleteInventoryItem,
         getInventoryBySku,
         recordSale,
+        addCustomer,
         getTotalInventoryValue,
         getTotalInventoryCount,
         getLowStockItems,
+        refreshData,
       }}
     >
       {children}

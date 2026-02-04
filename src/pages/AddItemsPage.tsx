@@ -30,7 +30,7 @@ export function AddItemsPage() {
         toast.success("Barcode scanned successfully");
     };
 
-    const handleAddItem = () => {
+    const handleAddItem = async () => {
         // Validation
         if (!itemName.trim()) {
             toast.error("Please enter item name");
@@ -59,18 +59,22 @@ export function AddItemsPage() {
         };
 
         // Add item to inventory context
-        addInventoryItem(newItem);
+        const success = await addInventoryItem(newItem);
 
-        toast.success(`${itemName} added to inventory successfully!`);
+        if (success) {
+            toast.success(`${itemName} added to inventory successfully!`);
 
-        // Reset form
-        setBarcode("");
-        setItemName("");
-        setCategory("");
-        setPrice("");
-        setQuantity("");
-        setDescription("");
-        setSku("");
+            // Reset form
+            setBarcode("");
+            setItemName("");
+            setCategory("");
+            setPrice("");
+            setQuantity("");
+            setDescription("");
+            setSku("");
+        } else {
+            toast.error("Failed to add item. Please try again.");
+        }
     };
 
     const handleClearForm = () => {
