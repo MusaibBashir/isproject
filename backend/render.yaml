@@ -1,0 +1,16 @@
+# Render.com Configuration for Prophet Forecasting Backend
+
+services:
+  - type: web
+    name: prophet-forecast-api
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: FLASK_APP
+        value: app.py
+    healthCheckPath: /api/health

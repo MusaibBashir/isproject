@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react";
-import { TrendingUp, TrendingDown, Activity, AlertCircle, Search, X } from "lucide-react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { TrendingUp, TrendingDown, Activity, AlertCircle, Search, X, Loader2, WifiOff, Brain, LineChart as LineChartIcon } from "lucide-react";
 import { useInventory } from "../context/InventoryContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import { PageContainer } from "../components/layout/PageContainer";
+import { checkBackendHealth, getBatchForecast, ForecastDataPoint } from "../services/forecastService";
 import {
     LineChart,
     Line,
@@ -15,7 +16,11 @@ import {
     ResponsiveContainer,
     Area,
     AreaChart,
+    ReferenceLine,
 } from "recharts";
+
+// Forecast method types
+type ForecastMethod = "prophet" | "simple";
 
 // Helper function to generate sales history from salesHistory context
 function generateHistoricalSales(salesHistory: any[], inventory: any[]) {
@@ -60,8 +65,8 @@ function generateHistoricalSales(salesHistory: any[], inventory: any[]) {
     return salesByQuarter;
 }
 
-// Helper function to predict future sales
-function predictFutureSales(
+// Helper function to predict future sales using simple linear trend
+function predictFutureSalesSimple(
     historicalSales: { [key: string]: { [sku: string]: number } },
     inventory: any[]
 ) {
@@ -90,6 +95,38 @@ function predictFutureSales(
                 Math.floor(avgSales + trend * (n + idx) * (1 + variation))
             );
             predictions[q][item.sku] = predicted;
+        });
+    });
+
+    return predictions;
+}
+
+// Convert Prophet daily forecasts to quarterly aggregates
+function aggregateProphetToQuarterly(
+    prophetForecasts: Record<string, ForecastDataPoint[]>,
+    inventory: any[]
+): { [key: string]: { [sku: string]: number } } {
+    const futureQuarters = ["Q1 2025", "Q2 2025", "Q3 2025", "Q4 2025"];
+    const predictions: { [key: string]: { [sku: string]: number } } = {};
+
+    futureQuarters.forEach((q) => {
+        predictions[q] = {};
+        inventory.forEach((item) => {
+            predictions[q][item.sku] = 0;
+        });
+    });
+
+    // Aggregate daily forecasts into quarters
+    Object.entries(prophetForecasts).forEach(([sku, forecasts]) => {
+        forecasts.forEach((point) => {
+            const date = new Date(point.ds);
+            const quarter = Math.floor(date.getMonth() / 3) + 1;
+            const year = date.getFullYear();
+            const quarterLabel = `Q${quarter} ${year}`;
+
+            if (predictions[quarterLabel] && predictions[quarterLabel][sku] !== undefined) {
+                predictions[quarterLabel][sku] += Math.round(point.yhat);
+            }
         });
     });
 
@@ -163,12 +200,76 @@ export function ForecastPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedSku, setSelectedSku] = useState<string | null>(null);
 
+    // Prophet integration state
+    const [forecastMethod, setForecastMethod] = useState<ForecastMethod>("prophet");
+    const [isBackendAvailable, setIsBackendAvailable] = useState<boolean | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [prophetForecasts, setProphetForecasts] = useState<Record<string, ForecastDataPoint[]> | null>(null);
+    const [backendError, setBackendError] = useState<string | null>(null);
+    const [showBackendAlert, setShowBackendAlert] = useState(false);
+
+    // Check backend availability on mount
+    useEffect(() => {
+        const checkBackend = async () => {
+            const isHealthy = await checkBackendHealth();
+            setIsBackendAvailable(isHealthy);
+            if (!isHealthy) {
+                setForecastMethod("simple");
+                setShowBackendAlert(true);
+            }
+        };
+        checkBackend();
+    }, []);
+
+    // Fetch Prophet forecasts
+    const fetchProphetForecasts = useCallback(async () => {
+        if (!isBackendAvailable || inventory.length === 0) return;
+
+        setIsLoading(true);
+        setBackendError(null);
+
+        try {
+            const skus = inventory.map(item => item.sku);
+            const response = await getBatchForecast(skus, 365, 'D'); // 365 days = ~4 quarters
+
+            if (response.success && response.forecasts) {
+                setProphetForecasts(response.forecasts);
+            } else {
+                setBackendError(response.error || "Failed to fetch Prophet forecasts");
+                setForecastMethod("simple");
+                setShowBackendAlert(true);
+            }
+        } catch (error) {
+            console.error("Prophet forecast error:", error);
+            setBackendError("Failed to connect to forecast backend");
+            setForecastMethod("simple");
+            setShowBackendAlert(true);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [isBackendAvailable, inventory]);
+
+    // Fetch Prophet forecasts when backend is available
+    useEffect(() => {
+        if (isBackendAvailable && forecastMethod === "prophet" && !prophetForecasts) {
+            fetchProphetForecasts();
+        }
+    }, [isBackendAvailable, forecastMethod, prophetForecasts, fetchProphetForecasts]);
+
     // Generate historical and predicted sales data
     const { historicalSales, predictions } = useMemo(() => {
         const historical = generateHistoricalSales(salesHistory, inventory);
-        const predicted = predictFutureSales(historical, inventory);
+
+        let predicted: { [key: string]: { [sku: string]: number } };
+
+        if (forecastMethod === "prophet" && prophetForecasts) {
+            predicted = aggregateProphetToQuarterly(prophetForecasts, inventory);
+        } else {
+            predicted = predictFutureSalesSimple(historical, inventory);
+        }
+
         return { historicalSales: historical, predictions: predicted };
-    }, [salesHistory, inventory]);
+    }, [salesHistory, inventory, forecastMethod, prophetForecasts]);
 
     // Calculate overall totals
     const overallData = useMemo(() => {
@@ -267,6 +368,18 @@ export function ForecastPage() {
         return { data, item, analysis };
     }, [selectedSku, historicalSales, predictions, inventory]);
 
+    // Handle method switch
+    const handleMethodChange = (method: ForecastMethod) => {
+        if (method === "prophet" && !isBackendAvailable) {
+            setShowBackendAlert(true);
+            return;
+        }
+        setForecastMethod(method);
+        if (method === "prophet" && !prophetForecasts) {
+            fetchProphetForecasts();
+        }
+    };
+
     return (
         <PageContainer
             title="Sales Forecast"
@@ -274,12 +387,86 @@ export function ForecastPage() {
             icon={<TrendingUp className="w-5 h-5 text-blue-600" />}
             iconBgColor="bg-blue-100"
         >
+            {/* Backend Alert */}
+            {showBackendAlert && (
+                <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
+                    <WifiOff className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                        <p className="font-medium text-amber-900">
+                            Prophet Backend Unavailable
+                        </p>
+                        <p className="text-sm text-amber-800 mt-1">
+                            {backendError || "Unable to connect to the Prophet forecasting backend."}
+                            {" "}Using simple trend prediction as fallback.
+                        </p>
+                    </div>
+                    <button
+                        onClick={() => setShowBackendAlert(false)}
+                        className="text-amber-600 hover:text-amber-800"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
+
+            {/* Forecast Method Selector */}
+            <div className="mb-4 flex items-center gap-4">
+                <span className="text-sm font-medium text-gray-700">Forecast Model:</span>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => handleMethodChange("prophet")}
+                        disabled={isLoading}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${forecastMethod === "prophet"
+                                ? "bg-blue-600 text-white"
+                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            } ${!isBackendAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
+                    >
+                        <Brain className="w-4 h-4" />
+                        Prophet AI
+                        {isLoading && forecastMethod === "prophet" && (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                        )}
+                    </button>
+                    <button
+                        onClick={() => handleMethodChange("simple")}
+                        disabled={isLoading}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${forecastMethod === "simple"
+                                ? "bg-blue-600 text-white"
+                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            }`}
+                    >
+                        <LineChartIcon className="w-4 h-4" />
+                        Simple Trend
+                    </button>
+                </div>
+                {forecastMethod === "prophet" && prophetForecasts && (
+                    <Badge variant="secondary" className="text-xs">
+                        AI-powered predictions with seasonality
+                    </Badge>
+                )}
+            </div>
+
+            {/* Loading State */}
+            {isLoading && (
+                <div className="mb-4 p-6 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-center gap-3">
+                    <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+                    <p className="text-blue-800 font-medium">
+                        Training Prophet model... This may take a few seconds.
+                    </p>
+                </div>
+            )}
+
             {/* Overall Forecast */}
             <Card className="border-2 border-blue-200 bg-blue-50">
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <Activity className="w-5 h-5 text-blue-600" />
                         Overall Inventory Forecast
+                        {forecastMethod === "prophet" && prophetForecasts && (
+                            <Badge className="ml-2 bg-purple-100 text-purple-800">
+                                Prophet AI
+                            </Badge>
+                        )}
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -309,8 +496,8 @@ export function ForecastPage() {
                             </p>
                             <p
                                 className={`text-2xl font-semibold ${parseFloat(overallInsights.growth) > 0
-                                        ? "text-green-600"
-                                        : "text-red-600"
+                                    ? "text-green-600"
+                                    : "text-red-600"
                                     }`}
                             >
                                 {overallInsights.growth}%
@@ -371,6 +558,12 @@ export function ForecastPage() {
                                         borderRadius: "8px",
                                     }}
                                 />
+                                <ReferenceLine
+                                    x="Q4 2024"
+                                    stroke="#9333ea"
+                                    strokeDasharray="5 5"
+                                    label={{ value: "Forecast →", position: "top", fontSize: 11, fill: "#9333ea" }}
+                                />
                                 <Area
                                     type="monotone"
                                     dataKey="sales"
@@ -395,6 +588,14 @@ export function ForecastPage() {
                                     Forecast (2025)
                                 </span>
                             </div>
+                            {forecastMethod === "prophet" && (
+                                <div className="flex items-center gap-2">
+                                    <Brain className="w-3 h-3 text-purple-600" />
+                                    <span className="text-sm text-purple-600 font-medium">
+                                        Prophet AI Model
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -417,6 +618,7 @@ export function ForecastPage() {
                                         {Math.abs(parseFloat(overallInsights.growth))}%
                                     </span>{" "}
                                     in 2025
+                                    {forecastMethod === "prophet" && " (Prophet AI prediction with seasonality patterns)"}
                                 </p>
                             </div>
                             <div className="flex items-start gap-2">
@@ -475,8 +677,8 @@ export function ForecastPage() {
                                         setSelectedSku(isSelected ? null : item.sku)
                                     }
                                     className={`p-4 rounded-lg border-2 transition-all text-left ${isSelected
-                                            ? "border-blue-500 bg-blue-50"
-                                            : "border-gray-200 bg-white hover:border-gray-300"
+                                        ? "border-blue-500 bg-blue-50"
+                                        : "border-gray-200 bg-white hover:border-gray-300"
                                         }`}
                                 >
                                     <div className="flex items-start justify-between mb-2">
@@ -561,6 +763,11 @@ export function ForecastPage() {
                                                 border: "1px solid #e5e7eb",
                                                 borderRadius: "8px",
                                             }}
+                                        />
+                                        <ReferenceLine
+                                            x="Q4 2024"
+                                            stroke="#9333ea"
+                                            strokeDasharray="5 5"
                                         />
                                         <Line
                                             type="monotone"

@@ -1,0 +1,14 @@
+# Python dependencies for Prophet Forecasting API
+# Use Python 3.10-3.12 for best compatibility
+
+flask==3.0.0
+flask-cors==4.0.0
+gunicorn==21.2.0
+
+# Prophet and its dependencies
+# Note: Prophet requires pystan which needs specific versions
+prophet==1.1.5
+
+# Data handling - let pip resolve versions
+pandas>=2.0.0
+numpy>=1.24.0
