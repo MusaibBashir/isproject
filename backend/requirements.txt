@@ -16,3 +16,6 @@ prophet==1.1.5
 
 # Required for Prophet's cmdstanpy backend
 pystan==3.7.0
+
+# Supabase for database access
+supabase==2.3.4

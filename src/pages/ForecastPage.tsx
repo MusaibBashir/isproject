@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { TrendingUp, TrendingDown, Activity, AlertCircle, Search, X, Loader2, WifiOff, Brain, LineChart as LineChartIcon } from "lucide-react";
+import { TrendingUp, TrendingDown, Activity, AlertCircle, Search, X, Loader2, WifiOff, Brain, LineChart as LineChartIcon, RefreshCw } from "lucide-react";
 import { useInventory } from "../context/InventoryContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import { PageContainer } from "../components/layout/PageContainer";
-import { checkBackendHealth, getBatchForecast, ForecastDataPoint } from "../services/forecastService";
+import { checkBackendHealth, getCachedForecasts, refreshForecasts, ForecastDataPoint } from "../services/forecastService";
 import {
     LineChart,
     Line,
@@ -204,16 +204,18 @@ export function ForecastPage() {
     const [forecastMethod, setForecastMethod] = useState<ForecastMethod>("prophet");
     const [isBackendAvailable, setIsBackendAvailable] = useState<boolean | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [prophetForecasts, setProphetForecasts] = useState<Record<string, ForecastDataPoint[]> | null>(null);
     const [backendError, setBackendError] = useState<string | null>(null);
     const [showBackendAlert, setShowBackendAlert] = useState(false);
+    const [lastGeneratedAt, setLastGeneratedAt] = useState<string | null>(null);
 
     // Check backend availability on mount
     useEffect(() => {
         const checkBackend = async () => {
-            const isHealthy = await checkBackendHealth();
-            setIsBackendAvailable(isHealthy);
-            if (!isHealthy) {
+            const result = await checkBackendHealth();
+            setIsBackendAvailable(result.healthy);
+            if (!result.healthy) {
                 setForecastMethod("simple");
                 setShowBackendAlert(true);
             }
@@ -221,40 +223,68 @@ export function ForecastPage() {
         checkBackend();
     }, []);
 
-    // Fetch Prophet forecasts
-    const fetchProphetForecasts = useCallback(async () => {
-        if (!isBackendAvailable || inventory.length === 0) return;
+    // Load cached forecasts immediately on mount (instant load)
+    useEffect(() => {
+        const loadCachedData = async () => {
+            setIsLoading(true);
+            try {
+                const cached = await getCachedForecasts();
+                if (cached.success && cached.cached && Object.keys(cached.forecasts).length > 0) {
+                    setProphetForecasts(cached.forecasts);
+                    if (cached.generated_at) {
+                        const firstSku = Object.keys(cached.generated_at)[0];
+                        setLastGeneratedAt(cached.generated_at[firstSku]);
+                    }
+                }
+            } catch (error) {
+                console.error("Error loading cached forecasts:", error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        loadCachedData();
+    }, []);
 
-        setIsLoading(true);
+    // Trigger background refresh when page loads
+    const triggerRefresh = useCallback(async () => {
+        if (!isBackendAvailable || isRefreshing) return;
+
+        setIsRefreshing(true);
         setBackendError(null);
 
         try {
-            const skus = inventory.map(item => item.sku);
-            const response = await getBatchForecast(skus, 365, 'D'); // 365 days = ~4 quarters
+            const response = await refreshForecasts(undefined, 365, 'D'); // 365 days = ~4 quarters
 
             if (response.success && response.forecasts) {
                 setProphetForecasts(response.forecasts);
+                if (response.model_info?.generated_at) {
+                    setLastGeneratedAt(response.model_info.generated_at);
+                }
             } else {
-                setBackendError(response.error || "Failed to fetch Prophet forecasts");
+                setBackendError(response.error || "Failed to refresh Prophet forecasts");
+                if (!prophetForecasts) {
+                    setForecastMethod("simple");
+                    setShowBackendAlert(true);
+                }
+            }
+        } catch (error) {
+            console.error("Prophet forecast refresh error:", error);
+            setBackendError("Failed to connect to forecast backend");
+            if (!prophetForecasts) {
                 setForecastMethod("simple");
                 setShowBackendAlert(true);
             }
-        } catch (error) {
-            console.error("Prophet forecast error:", error);
-            setBackendError("Failed to connect to forecast backend");
-            setForecastMethod("simple");
-            setShowBackendAlert(true);
         } finally {
-            setIsLoading(false);
+            setIsRefreshing(false);
         }
-    }, [isBackendAvailable, inventory]);
+    }, [isBackendAvailable, isRefreshing, prophetForecasts]);
 
-    // Fetch Prophet forecasts when backend is available
+    // Auto-refresh when backend becomes available and we have inventory
     useEffect(() => {
-        if (isBackendAvailable && forecastMethod === "prophet" && !prophetForecasts) {
-            fetchProphetForecasts();
+        if (isBackendAvailable && forecastMethod === "prophet" && inventory.length > 0) {
+            triggerRefresh();
         }
-    }, [isBackendAvailable, forecastMethod, prophetForecasts, fetchProphetForecasts]);
+    }, [isBackendAvailable, forecastMethod, inventory.length, triggerRefresh]);
 
     // Generate historical and predicted sales data
     const { historicalSales, predictions } = useMemo(() => {
@@ -417,8 +447,8 @@ export function ForecastPage() {
                         onClick={() => handleMethodChange("prophet")}
                         disabled={isLoading}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${forecastMethod === "prophet"
-                                ? "bg-blue-600 text-white"
-                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                             } ${!isBackendAvailable ? "opacity-50 cursor-not-allowed" : ""}`}
                     >
                         <Brain className="w-4 h-4" />
@@ -431,8 +461,8 @@ export function ForecastPage() {
                         onClick={() => handleMethodChange("simple")}
                         disabled={isLoading}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${forecastMethod === "simple"
-                                ? "bg-blue-600 text-white"
-                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                             }`}
                     >
                         <LineChartIcon className="w-4 h-4" />
