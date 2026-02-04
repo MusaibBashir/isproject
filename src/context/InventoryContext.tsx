@@ -50,6 +50,7 @@ interface InventoryContextType {
   updateInventoryQuantity: (sku: string, quantityChange: number) => Promise<boolean>;
   deleteInventoryItem: (id: string) => Promise<boolean>;
   getInventoryBySku: (sku: string) => InventoryItem | undefined;
+  getCustomerByPhone: (phone: string) => Promise<Customer | null>;
   recordSale: (sale: Omit<SaleRecord, "id" | "date">) => Promise<boolean>;
   addCustomer: (customer: Omit<Customer, "id" | "createdAt">) => Promise<Customer | null>;
   getTotalInventoryValue: () => number;
@@ -301,6 +302,96 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     return inventory.find((item) => item.sku === sku);
   };
 
+  // Get customer by phone number
+  const getCustomerByPhone = async (phone: string): Promise<Customer | null> => {
+    if (!phone.trim()) return null;
+
+    // First check local state
+    const localCustomer = customers.find((c: Customer) => c.phone === phone);
+    if (localCustomer) return localCustomer;
+
+    // Then check database
+    if (!isSupabaseAvailable() || !supabase) return null;
+
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('phone', phone)
+        .maybeSingle();
+
+      if (error || !data) return null;
+
+      return {
+        id: data.id,
+        name: data.name,
+        phone: data.phone,
+        email: data.email,
+        createdAt: data.created_at,
+      };
+    } catch (err) {
+      console.error('Error fetching customer by phone:', err);
+      return null;
+    }
+  };
+
+  // Find or create customer by phone number (unique identifier)
+  const findOrCreateCustomer = async (
+    customerName: string,
+    customerPhone?: string,
+    customerEmail?: string
+  ): Promise<string | null> => {
+    if (!isSupabaseAvailable() || !supabase) return null;
+
+    try {
+      // If phone is provided, use it as the unique identifier
+      if (customerPhone) {
+        const { data: existingCustomer } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('phone', customerPhone)
+          .maybeSingle();
+
+        if (existingCustomer) {
+          return existingCustomer.id;
+        }
+      }
+
+      // Create new customer
+      const { data: newCustomer, error } = await supabase
+        .from('customers')
+        .insert({
+          name: customerName,
+          phone: customerPhone || null,
+          email: customerEmail || null,
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Error creating customer:', error);
+        return null;
+      }
+
+      // Add to local state
+      if (newCustomer) {
+        setCustomers((prev: Customer[]) => [...prev, {
+          id: newCustomer.id,
+          name: customerName,
+          phone: customerPhone,
+          email: customerEmail,
+          createdAt: new Date().toISOString(),
+        }]);
+      }
+
+      return newCustomer?.id || null;
+    } catch (err) {
+      console.error('Error finding/creating customer:', err);
+      return null;
+    }
+  };
+
+
   // Record sale
   const recordSale = async (
     sale: Omit<SaleRecord, "id" | "date">
@@ -321,7 +412,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         id: Date.now().toString(),
         date: new Date().toISOString(),
       };
-      setSalesHistory((prev) => [newSale, ...prev]);
+      setSalesHistory((prev: SaleRecord[]) => [newSale, ...prev]);
       // Deduct inventory
       for (const saleItem of sale.items) {
         await updateInventoryQuantity(saleItem.sku, -saleItem.quantity);
@@ -330,10 +421,18 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      // Insert sale
+      // Find or create customer
+      const customerId = await findOrCreateCustomer(
+        sale.customerName,
+        sale.customerPhone,
+        sale.customerEmail
+      );
+
+      // Insert sale with customer_id
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
         .insert({
+          customer_id: customerId,
           customer_name: sale.customerName,
           total: sale.total,
         })
@@ -343,7 +442,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       if (saleError) throw saleError;
 
       // Insert sale items
-      const saleItems = sale.items.map((item) => ({
+      const saleItems = sale.items.map((item: SaleItem) => ({
         sale_id: saleData.id,
         sku: item.sku,
         item_name: item.itemName,
@@ -359,7 +458,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 
       // Deduct inventory
       for (const saleItem of sale.items) {
-        const item = inventory.find((i) => i.sku === saleItem.sku);
+        const item = inventory.find((i: InventoryItem) => i.sku === saleItem.sku);
         if (item) {
           await supabase
             .from('inventory')
@@ -377,6 +476,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       return false;
     }
   };
+
 
   // Add customer
   const addCustomer = async (
@@ -444,6 +544,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         updateInventoryQuantity,
         deleteInventoryItem,
         getInventoryBySku,
+        getCustomerByPhone,
         recordSale,
         addCustomer,
         getTotalInventoryValue,
