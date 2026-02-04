@@ -1,12 +1,14 @@
 # Python dependencies for Prophet Forecasting API
+# Requires Python 3.11 (set in Render dashboard)
 
+# Use pre-built wheels - specific versions known to work
 flask==3.0.0
 flask-cors==4.0.0
 gunicorn==21.2.0
 
-# Pin numpy to <2.0 for Prophet compatibility
-numpy>=1.24.0,<2.0.0
-pandas>=2.0.0,<2.2.0
+# Pin to versions with binary wheels for Python 3.11
+numpy==1.26.4
+pandas==2.0.3
 
-# Prophet with compatible pystan
+# Prophet - works with numpy<2.0
 prophet==1.1.5
