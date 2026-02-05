@@ -222,14 +222,17 @@ def get_cached_forecasts():
         })
 
 
-@app.route('/api/forecast/refresh', methods=['POST'])
+@app.route('/api/forecast/refresh', methods=['GET', 'POST'])
 def refresh_forecasts():
     """
     Generate fresh forecasts from real Supabase sales data.
     This endpoint fetches actual sales, runs Prophet, and caches results.
     """
     try:
-        data = request.get_json() or {}
+        data = {}
+        if request.method == 'POST':
+            data = request.get_json(silent=True) or {}
+            
         periods = data.get('periods', 90)
         frequency = data.get('frequency', 'D')
         target_skus = data.get('skus', [])  # Optional: specific SKUs to refresh

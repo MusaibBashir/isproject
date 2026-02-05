@@ -18,7 +18,8 @@ Server runs on `http://localhost:5000`
 |----------|--------|-------------|
 | `/api/health` | GET | Health check |
 | `/api/forecast` | POST | Single SKU forecast |
-| `/api/forecast/batch` | POST | Multiple SKU forecasts |
+| `/api/forecast/refresh` | GET/POST | Refresh cached forecasts from Supabase |
+| `/api/forecast/cached` | GET | Get cached forecasts |
 | `/api/skus` | GET | List available SKUs |
 
 ## Deploy to Render
