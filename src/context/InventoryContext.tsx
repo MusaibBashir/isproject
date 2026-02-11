@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
 import { supabase, isSupabaseAvailable } from "../lib/supabaseClient";
+import { AuthContext } from "./AuthContext";
 
 export interface InventoryItem {
   id: string;
@@ -12,6 +13,7 @@ export interface InventoryItem {
   description?: string;
   dateAdded: string;
   lastUpdated: string;
+  franchiseId?: string;
 }
 
 export interface SaleItem {
@@ -29,6 +31,7 @@ export interface SaleRecord {
   customerEmail?: string;
   total: number;
   date: string;
+  franchiseId?: string;
 }
 
 export interface Customer {
@@ -74,6 +77,9 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Get auth context for franchise filtering (returns undefined if AuthProvider not yet mounted)
+  const authContext = useContext(AuthContext);
+
   // Convert Supabase row to InventoryItem
   const mapInventoryRow = (row: any): InventoryItem => ({
     id: row.id,
@@ -86,6 +92,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     description: row.description,
     dateAdded: row.date_added,
     lastUpdated: row.last_updated,
+    franchiseId: row.franchise_id,
   });
 
   // Convert Supabase row to Customer
@@ -112,7 +119,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     try {
-      // Fetch inventory
+      // Fetch inventory (RLS handles filtering, but we also filter client-side for admin views)
       const { data: inventoryData, error: inventoryError } = await supabase
         .from('inventory')
         .select('*')
@@ -130,7 +137,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       if (customersError) throw customersError;
       setCustomers((customersData || []).map(mapCustomerRow));
 
-      // Fetch sales with items
+      // Fetch sales with items (RLS handles filtering)
       const { data: salesData, error: salesError } = await supabase
         .from('sales')
         .select(`
@@ -138,6 +145,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
           customer_name,
           total,
           date,
+          franchise_id,
           sale_items (
             sku,
             item_name,
@@ -154,6 +162,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         customerName: sale.customer_name,
         total: parseFloat(sale.total),
         date: sale.date,
+        franchiseId: sale.franchise_id,
         items: (sale.sale_items || []).map((item: any) => ({
           sku: item.sku,
           itemName: item.item_name,
@@ -195,17 +204,22 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      const insertData: any = {
+        sku: item.sku,
+        barcode: item.barcode,
+        item_name: item.itemName,
+        category: item.category,
+        price: item.price,
+        quantity: item.quantity,
+        description: item.description,
+      };
+      // Add franchise_id if available
+      if (authContext?.franchise?.id) {
+        insertData.franchise_id = authContext.franchise.id;
+      }
       const { data, error } = await supabase
         .from('inventory')
-        .insert({
-          sku: item.sku,
-          barcode: item.barcode,
-          item_name: item.itemName,
-          category: item.category,
-          price: item.price,
-          quantity: item.quantity,
-          description: item.description,
-        })
+        .insert(insertData)
         .select()
         .single();
 
@@ -428,14 +442,18 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         sale.customerEmail
       );
 
-      // Insert sale with customer_id
+      // Insert sale with customer_id and franchise_id
+      const saleInsert: any = {
+        customer_id: customerId,
+        customer_name: sale.customerName,
+        total: sale.total,
+      };
+      if (authContext?.franchise?.id) {
+        saleInsert.franchise_id = authContext.franchise.id;
+      }
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
-        .insert({
-          customer_id: customerId,
-          customer_name: sale.customerName,
-          total: sale.total,
-        })
+        .insert(saleInsert)
         .select()
         .single();
 

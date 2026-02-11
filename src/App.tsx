@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { BrowserRouter, Routes, Route, Link, useOutletContext } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Link, Navigate, useOutletContext } from "react-router-dom";
 import { DashboardFilters, FilterState } from "./components/DashboardFilters";
 import { SalesTrendChart } from "./components/SalesTrendChart";
 import { RevenueBreakdownChart } from "./components/RevenueBreakdownChart";
@@ -13,6 +13,13 @@ import { Card, CardContent } from "./components/ui/card";
 import { BarChart3, TrendingUp, Users, IndianRupee, Filter, Shield, Store } from "lucide-react";
 import { Toaster } from "./components/ui/sonner";
 import { InventoryProvider } from "./context/InventoryContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { LoginPage } from "./pages/LoginPage";
+import { AdminDashboard } from "./pages/admin/AdminDashboard";
+import { ManageFranchisesPage } from "./pages/admin/ManageFranchisesPage";
+import { FranchiseDetailPage } from "./pages/admin/FranchiseDetailPage";
+import { FranchiseDashboard } from "./pages/franchise/FranchiseDashboard";
 import {
   SalesPage,
   AddItemsPage,
@@ -22,22 +29,53 @@ import {
   CustomersPage,
 } from "./pages";
 
+function RoleRedirect() {
+  const { user, profile, isLoading } = useAuth();
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace />;
+  if (profile?.role === "admin") return <Navigate to="/admin" replace />;
+  return <Navigate to="/dashboard" replace />;
+}
+
 export default function App() {
   return (
-    <InventoryProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/sales" element={<SalesPage />} />
-          <Route path="/add-items" element={<AddItemsPage />} />
-          <Route path="/inventory" element={<InventoryPage />} />
-          <Route path="/forecast" element={<ForecastPage />} />
-          <Route path="/sales-history" element={<SalesHistoryPage />} />
-          <Route path="/customers" element={<CustomersPage />} />
-        </Routes>
-        <Toaster />
-      </BrowserRouter>
-    </InventoryProvider>
+    <AuthProvider>
+      <InventoryProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* Auth */}
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<RoleRedirect />} />
+
+            {/* Admin routes */}
+            <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminDashboard /></ProtectedRoute>} />
+            <Route path="/admin/franchises" element={<ProtectedRoute requiredRole="admin"><ManageFranchisesPage /></ProtectedRoute>} />
+            <Route path="/admin/franchise/:id" element={<ProtectedRoute requiredRole="admin"><FranchiseDetailPage /></ProtectedRoute>} />
+
+            {/* Franchise dashboard */}
+            <Route path="/dashboard" element={<ProtectedRoute requiredRole="franchise"><FranchiseDashboard /></ProtectedRoute>} />
+
+            {/* Shared routes (both roles) */}
+            <Route path="/sales" element={<ProtectedRoute><SalesPage /></ProtectedRoute>} />
+            <Route path="/add-items" element={<ProtectedRoute><AddItemsPage /></ProtectedRoute>} />
+            <Route path="/inventory" element={<ProtectedRoute><InventoryPage /></ProtectedRoute>} />
+            <Route path="/forecast" element={<ProtectedRoute><ForecastPage /></ProtectedRoute>} />
+            <Route path="/sales-history" element={<ProtectedRoute><SalesHistoryPage /></ProtectedRoute>} />
+            <Route path="/customers" element={<ProtectedRoute><CustomersPage /></ProtectedRoute>} />
+
+            {/* Old dashboard kept for admin analytics view */}
+            <Route path="/analytics" element={<ProtectedRoute requiredRole="admin"><Dashboard /></ProtectedRoute>} />
+          </Routes>
+          <Toaster />
+        </BrowserRouter>
+      </InventoryProvider>
+    </AuthProvider>
   );
 }
 
