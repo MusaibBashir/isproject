@@ -1,4 +1,4 @@
-import { DollarSign, Calendar, User, Phone, Mail, Package } from "lucide-react";
+import { IndianRupee, Calendar, User, Phone, Mail, Package } from "lucide-react";
 import { useInventory } from "../context/InventoryContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
@@ -20,14 +20,14 @@ export function SalesHistoryPage() {
     };
 
     const formatCurrency = (amount: number) => {
-        return `$${amount.toFixed(2)}`;
+        return `₹${amount.toFixed(2)}`;
     };
 
     return (
         <PageContainer
             title="Recent Sales"
             subtitle="Complete sales history with receipts"
-            icon={<DollarSign className="w-5 h-5 text-green-600" />}
+            icon={<IndianRupee className="w-5 h-5 text-green-600" />}
             iconBgColor="bg-green-100"
         >
             {salesHistory.length === 0 ? (

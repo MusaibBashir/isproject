@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Scan, Keyboard, Plus, Trash2, DollarSign } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { Scan, Keyboard, Plus, Trash2, IndianRupee, Search } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -36,6 +36,81 @@ export function SalesPage() {
     const [customerEmail, setCustomerEmail] = useState("");
     const [additionalNotes, setAdditionalNotes] = useState("");
     const [isLookingUpCustomer, setIsLookingUpCustomer] = useState(false);
+
+    // Fuzzy search state
+    const [searchQuery, setSearchQuery] = useState("");
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // Levenshtein distance for fuzzy matching
+    const levenshteinDistance = (a: string, b: string): number => {
+        const matrix: number[][] = [];
+        for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+        for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+        for (let i = 1; i <= b.length; i++) {
+            for (let j = 1; j <= a.length; j++) {
+                if (b[i - 1] === a[j - 1]) {
+                    matrix[i][j] = matrix[i - 1][j - 1];
+                } else {
+                    matrix[i][j] = Math.min(
+                        matrix[i - 1][j - 1] + 1,
+                        matrix[i][j - 1] + 1,
+                        matrix[i - 1][j] + 1
+                    );
+                }
+            }
+        }
+        return matrix[b.length][a.length];
+    };
+
+    // Fuzzy filtered inventory items
+    const filteredInventory = useMemo(() => {
+        if (!searchQuery.trim()) return inventory;
+        const query = searchQuery.toLowerCase();
+        return inventory
+            .map((item: any) => {
+                const name = item.itemName.toLowerCase();
+                const sku = item.sku.toLowerCase();
+                // Exact substring match gets highest priority
+                if (name.includes(query) || sku.includes(query)) {
+                    return { ...item, score: 0 };
+                }
+                // Fuzzy match on name and sku
+                const nameDistance = levenshteinDistance(query, name.substring(0, query.length));
+                const skuDistance = levenshteinDistance(query, sku.substring(0, query.length));
+                const minDistance = Math.min(nameDistance, skuDistance);
+                // Allow matches within a reasonable threshold
+                const threshold = Math.max(2, Math.floor(query.length / 3));
+                if (minDistance <= threshold) {
+                    return { ...item, score: minDistance };
+                }
+                return null;
+            })
+            .filter(Boolean)
+            .sort((a: any, b: any) => a.score - b.score);
+    }, [searchQuery, inventory]);
+
+    // Close dropdown on outside click
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsDropdownOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const handleSelectItem = (sku: string) => {
+        setSelectedSku(sku);
+        const item = getInventoryBySku(sku);
+        if (item) {
+            setItemName(item.itemName);
+            setPrice(item.price);
+            setSearchQuery(item.itemName);
+        }
+        setIsDropdownOpen(false);
+    };
 
     // Handle phone number change with auto-lookup
     const handlePhoneChange = async (phone: string) => {
@@ -98,6 +173,7 @@ export function SalesPage() {
         setQuantity(1);
         setPrice(0);
         setBarcode("");
+        setSearchQuery("");
 
         toast.success("Item added to sale");
     };
@@ -155,7 +231,7 @@ export function SalesPage() {
         });
 
         if (success) {
-            toast.success(`Sale completed! Total: $${total.toFixed(2)}. Inventory updated.`);
+            toast.success(`Sale completed! Total: ₹${total.toFixed(2)}. Inventory updated.`);
 
             // Reset form
             setItems([]);
@@ -174,7 +250,7 @@ export function SalesPage() {
         <PageContainer
             title="New Sale"
             subtitle="Add items and customer details"
-            icon={<DollarSign className="w-5 h-5 text-green-600" />}
+            icon={<IndianRupee className="w-5 h-5 text-green-600" />}
             iconBgColor="bg-green-100"
         >
             <div className="grid grid-cols-2 gap-6">
@@ -232,42 +308,71 @@ export function SalesPage() {
                                 </div>
                             )}
 
-                            {/* Item Details */}
-                            <div className="space-y-2">
-                                <Label htmlFor="itemSelect">Select Item *</Label>
-                                <select
-                                    id="itemSelect"
-                                    value={selectedSku}
-                                    onChange={(e) => {
-                                        const sku = e.target.value;
-                                        setSelectedSku(sku);
-                                        if (sku) {
-                                            const item = getInventoryBySku(sku);
-                                            if (item) {
-                                                setItemName(item.itemName);
-                                                setPrice(item.price);
-                                            }
-                                        } else {
-                                            setItemName("");
-                                            setPrice(0);
-                                        }
-                                    }}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-400"
-                                >
-                                    <option value="">-- Select an item --</option>
-                                    {inventory.map((item) => (
-                                        <option key={item.id} value={item.sku}>
-                                            {item.itemName} - {item.sku} ({item.quantity} in stock)
-                                        </option>
-                                    ))}
-                                </select>
+                            {/* Item Details - Fuzzy Search */}
+                            <div className="space-y-2" ref={dropdownRef}>
+                                <Label htmlFor="itemSearch">Search Item *</Label>
+                                <div className="relative">
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                        <input
+                                            id="itemSearch"
+                                            type="text"
+                                            value={searchQuery}
+                                            onChange={(e: any) => {
+                                                setSearchQuery(e.target.value);
+                                                setIsDropdownOpen(true);
+                                                if (!e.target.value) {
+                                                    setSelectedSku("");
+                                                    setItemName("");
+                                                    setPrice(0);
+                                                }
+                                            }}
+                                            onFocus={() => setIsDropdownOpen(true)}
+                                            placeholder="Type to search items..."
+                                            className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm"
+                                            autoComplete="off"
+                                        />
+                                    </div>
+                                    {isDropdownOpen && (
+                                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                            {filteredInventory.length === 0 ? (
+                                                <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                                                    No items found{searchQuery && " — try a different search"}
+                                                </div>
+                                            ) : (
+                                                filteredInventory.map((item: any) => (
+                                                    <button
+                                                        key={item.id}
+                                                        type="button"
+                                                        onClick={() => handleSelectItem(item.sku)}
+                                                        className={`w-full text-left px-4 py-2.5 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors ${selectedSku === item.sku ? "bg-blue-50" : ""
+                                                            }`}
+                                                    >
+                                                        <div className="flex justify-between items-center">
+                                                            <div>
+                                                                <p className="text-sm font-medium text-gray-900">{item.itemName}</p>
+                                                                <p className="text-xs text-gray-500">SKU: {item.sku}</p>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <p className="text-sm font-medium text-gray-700">₹{item.price.toFixed(2)}</p>
+                                                                <p className={`text-xs ${item.quantity > 0 ? "text-green-600" : "text-red-500"}`}>
+                                                                    {item.quantity} in stock
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             {selectedSku && (
                                 <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
                                     <p className="text-sm font-medium text-gray-900">{itemName}</p>
                                     <p className="text-xs text-gray-600 mt-1">
-                                        Price: ${price.toFixed(2)} | Stock: {getInventoryBySku(selectedSku)?.quantity || 0} units
+                                        Price: ₹{price.toFixed(2)} | Stock: {getInventoryBySku(selectedSku)?.quantity || 0} units
                                     </p>
                                 </div>
                             )}
@@ -284,7 +389,7 @@ export function SalesPage() {
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="price">Price ($) *</Label>
+                                    <Label htmlFor="price">Price (₹) *</Label>
                                     <Input
                                         id="price"
                                         type="number"
@@ -390,7 +495,7 @@ export function SalesPage() {
                                                     </p>
                                                 )}
                                                 <p className="text-sm text-gray-600 mt-1">
-                                                    {item.quantity} × ${item.price.toFixed(2)} = $
+                                                    {item.quantity} × ₹{item.price.toFixed(2)} = ₹
                                                     {(item.quantity * item.price).toFixed(2)}
                                                 </p>
                                             </div>
@@ -414,18 +519,18 @@ export function SalesPage() {
                                 <div className="flex justify-between text-sm">
                                     <span className="text-gray-600">Subtotal</span>
                                     <span className="text-gray-900 font-medium">
-                                        ${total.toFixed(2)}
+                                        ₹{total.toFixed(2)}
                                     </span>
                                 </div>
                                 <div className="flex justify-between text-sm">
                                     <span className="text-gray-600">Tax (0%)</span>
-                                    <span className="text-gray-900 font-medium">$0.00</span>
+                                    <span className="text-gray-900 font-medium">₹0.00</span>
                                 </div>
                                 <div className="border-t border-gray-300 pt-3">
                                     <div className="flex justify-between">
                                         <span className="font-semibold text-gray-900">Total</span>
                                         <span className="text-2xl font-semibold text-gray-900">
-                                            ${total.toFixed(2)}
+                                            ₹{total.toFixed(2)}
                                         </span>
                                     </div>
                                 </div>

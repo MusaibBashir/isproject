@@ -34,7 +34,7 @@ export function SalesTrendChart({ data, onDataClick, selectedCategory }: SalesTr
     .slice(-12); // Show last 12 months
 
   const totalSales = chartData.reduce((sum: number, item: any) => sum + item.sales, 0);
-  const avgGrowth = chartData.length > 1 ? 
+  const avgGrowth = chartData.length > 1 ?
     ((chartData[chartData.length - 1].sales - chartData[0].sales) / chartData[0].sales * 100) : 0;
 
   const handleClick = (data: any) => {
@@ -52,7 +52,7 @@ export function SalesTrendChart({ data, onDataClick, selectedCategory }: SalesTr
             Sales Trend
           </CardTitle>
           <div className="text-right">
-            <div className="text-xl font-semibold text-gray-900">${(totalSales / 1000000).toFixed(1)}M</div>
+            <div className="text-xl font-semibold text-gray-900">₹{(totalSales / 1000000).toFixed(1)}M</div>
             <div className={`text-sm ${avgGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {avgGrowth >= 0 ? '+' : ''}{avgGrowth.toFixed(1)}%
             </div>
@@ -64,25 +64,25 @@ export function SalesTrendChart({ data, onDataClick, selectedCategory }: SalesTr
           <AreaChart data={chartData} onClick={handleClick}>
             <defs>
               <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.2}/>
-                <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.05}/>
+                <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.2} />
+                <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.05} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
-            <XAxis 
-              dataKey="month" 
+            <XAxis
+              dataKey="month"
               tick={{ fontSize: 12, fill: '#737373' }}
               axisLine={{ stroke: '#d4d4d4' }}
               tickLine={{ stroke: '#d4d4d4' }}
             />
-            <YAxis 
+            <YAxis
               tick={{ fontSize: 12, fill: '#737373' }}
-              tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`}
+              tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}K`}
               axisLine={{ stroke: '#d4d4d4' }}
               tickLine={{ stroke: '#d4d4d4' }}
             />
-            <Tooltip 
-              formatter={(value: number) => [`$${value.toLocaleString()}`, 'Sales']}
+            <Tooltip
+              formatter={(value: number) => [`₹${value.toLocaleString()}`, 'Sales']}
               labelFormatter={(label) => `Month: ${label}`}
               contentStyle={{
                 backgroundColor: 'white',
@@ -98,10 +98,10 @@ export function SalesTrendChart({ data, onDataClick, selectedCategory }: SalesTr
               strokeWidth={2}
               fill="url(#salesGradient)"
               dot={{ fill: "#0ea5e9", strokeWidth: 2, r: 4 }}
-              activeDot={{ 
-                r: 6, 
-                stroke: "#0ea5e9", 
-                strokeWidth: 2, 
+              activeDot={{
+                r: 6,
+                stroke: "#0ea5e9",
+                strokeWidth: 2,
                 fill: "#ffffff"
               }}
             />
