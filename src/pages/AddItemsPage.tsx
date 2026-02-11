@@ -198,7 +198,7 @@ export function AddItemsPage() {
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label htmlFor="price">
-                                    Price ($) <span className="text-red-500">*</span>
+                                    Price (₹) <span className="text-red-500">*</span>
                                 </Label>
                                 <Input
                                     id="price"
@@ -231,7 +231,7 @@ export function AddItemsPage() {
                                 <div className="flex justify-between items-center">
                                     <span className="text-sm text-gray-600">Total Value:</span>
                                     <span className="text-xl font-semibold text-green-600">
-                                        ${(parseFloat(price) * parseInt(quantity || "0")).toFixed(2)}
+                                        ₹{(parseFloat(price) * parseInt(quantity || "0")).toFixed(2)}
                                     </span>
                                 </div>
                             </div>

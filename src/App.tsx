@@ -10,7 +10,7 @@ import { HamburgerMenu } from "./components/HamburgerMenu";
 import { InventoryAlertsCard } from "./components/InventoryAlertsCard";
 import { sampleData, categories, regions, DataPoint } from "./data/sampleData";
 import { Card, CardContent } from "./components/ui/card";
-import { BarChart3, TrendingUp, Users, DollarSign, Filter, Shield, Store } from "lucide-react";
+import { BarChart3, TrendingUp, Users, IndianRupee, Filter, Shield, Store } from "lucide-react";
 import { Toaster } from "./components/ui/sonner";
 import { InventoryProvider } from "./context/InventoryContext";
 import {
@@ -183,14 +183,14 @@ function Dashboard() {
                 <div>
                   <p className="text-sm font-medium text-gray-600">Total Revenue</p>
                   <p className="text-2xl font-semibold text-gray-900 mt-1">
-                    ${(summaryMetrics.totalRevenue / 1000000).toFixed(1)}M
+                    ₹{(summaryMetrics.totalRevenue / 1000000).toFixed(1)}M
                   </p>
                   <p className={`text-sm mt-1 ${summaryMetrics.revenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {summaryMetrics.revenueGrowth >= 0 ? '+' : ''}{summaryMetrics.revenueGrowth.toFixed(1)}% YoY
                   </p>
                 </div>
                 <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <DollarSign className="w-5 h-5 text-blue-600" />
+                  <IndianRupee className="w-5 h-5 text-blue-600" />
                 </div>
               </div>
             </CardContent>
@@ -202,7 +202,7 @@ function Dashboard() {
                 <div>
                   <p className="text-sm font-medium text-gray-600">Total Sales</p>
                   <p className="text-2xl font-semibold text-gray-900 mt-1">
-                    ${(summaryMetrics.totalSales / 1000000).toFixed(1)}M
+                    ₹{(summaryMetrics.totalSales / 1000000).toFixed(1)}M
                   </p>
                   <p className="text-sm text-gray-500 mt-1">Current period</p>
                 </div>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Package, DollarSign, AlertTriangle, Search } from "lucide-react";
+import { Package, IndianRupee, AlertTriangle, Search } from "lucide-react";
 import { Input } from "../components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { useInventory } from "../context/InventoryContext";
@@ -75,12 +75,12 @@ export function InventoryPage() {
                             <div>
                                 <p className="text-sm text-gray-600">Total Value</p>
                                 <p className="text-3xl font-semibold text-gray-900 mt-2">
-                                    ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                    ₹{totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                 </p>
                                 <p className="text-xs text-gray-500 mt-1">Current inventory worth</p>
                             </div>
                             <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                                <DollarSign className="w-6 h-6 text-green-600" />
+                                <IndianRupee className="w-6 h-6 text-green-600" />
                             </div>
                         </div>
                     </CardContent>
@@ -217,13 +217,13 @@ export function InventoryPage() {
                                                     </span>
                                                 </td>
                                                 <td className="py-4 text-sm text-gray-900 text-right">
-                                                    ${item.price.toFixed(2)}
+                                                    ₹{item.price.toFixed(2)}
                                                 </td>
                                                 <td className="py-4 text-sm font-semibold text-gray-900 text-right">
                                                     {item.quantity}
                                                 </td>
                                                 <td className="py-4 text-sm text-gray-900 text-right">
-                                                    ${(item.price * item.quantity).toFixed(2)}
+                                                    ₹{(item.price * item.quantity).toFixed(2)}
                                                 </td>
                                                 <td className="py-4">
                                                     <span

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Menu, Plus, Package, TrendingUp, DollarSign } from "lucide-react";
+import { Menu, Plus, Package, TrendingUp, IndianRupee } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -17,7 +17,7 @@ export function HamburgerMenu() {
   const menuItems = [
     {
       label: "Sales",
-      icon: DollarSign,
+      icon: IndianRupee,
       to: "/sales",
     },
     {

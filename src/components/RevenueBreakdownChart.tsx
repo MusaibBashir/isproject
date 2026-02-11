@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { DataPoint } from "../data/sampleData";
-import { DollarSign } from "lucide-react";
+import { IndianRupee } from "lucide-react";
 
 interface RevenueBreakdownChartProps {
   data: DataPoint[];
@@ -35,7 +35,7 @@ export function RevenueBreakdownChart({ data, onDataClick, selectedCategory }: R
   }, {} as Record<string, any>);
 
   const totalRevenue = Object.values(categoryData).reduce((sum: number, item: any) => sum + item.revenue, 0);
-  
+
   const chartData = Object.values(categoryData).map((item: any) => ({
     ...item,
     percentage: ((item.revenue / totalRevenue) * 100).toFixed(1)
@@ -52,10 +52,10 @@ export function RevenueBreakdownChart({ data, onDataClick, selectedCategory }: R
       <CardHeader className="pb-3 border-b border-gray-100">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-gray-900 text-lg font-semibold">
-            <DollarSign className="w-5 h-5 text-green-600" />
+            <IndianRupee className="w-5 h-5 text-green-600" />
             Revenue by Category
           </CardTitle>
-          <div className="text-xl font-semibold text-gray-900">${(totalRevenue / 1000000).toFixed(1)}M</div>
+          <div className="text-xl font-semibold text-gray-900">₹{(totalRevenue / 1000000).toFixed(1)}M</div>
         </div>
       </CardHeader>
       <CardContent className="p-6">
@@ -73,12 +73,12 @@ export function RevenueBreakdownChart({ data, onDataClick, selectedCategory }: R
                 onClick={handleClick}
               >
                 {chartData.map((entry: any, index: number) => (
-                  <Cell 
-                    key={`cell-${index}`} 
+                  <Cell
+                    key={`cell-${index}`}
                     fill={CHART_COLORS[index % CHART_COLORS.length]}
                     stroke={selectedCategory === entry.category ? "#374151" : "#ffffff"}
                     strokeWidth={selectedCategory === entry.category ? 2 : 1}
-                    style={{ 
+                    style={{
                       cursor: 'pointer',
                       filter: selectedCategory === entry.category ? 'brightness(1.1)' : 'none',
                       transition: 'all 0.2s ease'
@@ -86,8 +86,8 @@ export function RevenueBreakdownChart({ data, onDataClick, selectedCategory }: R
                   />
                 ))}
               </Pie>
-              <Tooltip 
-                formatter={(value: number) => [`$${value.toLocaleString()}`, 'Revenue']}
+              <Tooltip
+                formatter={(value: number) => [`₹${value.toLocaleString()}`, 'Revenue']}
                 contentStyle={{
                   backgroundColor: 'white',
                   border: '1px solid #e5e5e5',
@@ -100,18 +100,17 @@ export function RevenueBreakdownChart({ data, onDataClick, selectedCategory }: R
         </div>
         <div className="mt-4 space-y-2">
           {chartData.slice(0, 5).map((item: any, index: number) => (
-            <div 
-              key={item.category} 
-              className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors duration-200 ${
-                selectedCategory === item.category 
-                  ? 'bg-gray-100' 
+            <div
+              key={item.category}
+              className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors duration-200 ${selectedCategory === item.category
+                  ? 'bg-gray-100'
                   : 'hover:bg-gray-50'
-              }`}
+                }`}
               onClick={() => handleClick(item, index)}
             >
               <div className="flex items-center gap-3">
-                <div 
-                  className="w-3 h-3 rounded-full" 
+                <div
+                  className="w-3 h-3 rounded-full"
                   style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
                 />
                 <span className="text-sm font-medium text-gray-900">{item.category}</span>
@@ -119,7 +118,7 @@ export function RevenueBreakdownChart({ data, onDataClick, selectedCategory }: R
               <div className="text-right">
                 <div className="text-sm font-semibold text-gray-900">{item.percentage}%</div>
                 <div className="text-xs text-gray-500">
-                  ${(item.revenue / 1000).toFixed(0)}K
+                  ₹{(item.revenue / 1000).toFixed(0)}K
                 </div>
               </div>
             </div>
