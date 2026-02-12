@@ -275,6 +275,28 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     fetchData();
   }, [authContext?.isLoading, authContext?.profile?.role, authContext?.franchise?.id, fetchData]);
 
+  // Supabase Realtime: auto-refresh when inventory/stock_orders/stock_order_items change
+  useEffect(() => {
+    if (!isSupabaseAvailable() || !supabase) return;
+
+    const channel = supabase
+      .channel('inventory-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => {
+        fetchData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_orders' }, () => {
+        fetchData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_order_items' }, () => {
+        fetchData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchData]);
+
   // Add inventory item
   const addInventoryItem = async (
     item: Omit<InventoryItem, "id" | "dateAdded" | "lastUpdated">
