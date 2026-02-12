@@ -1,28 +1,41 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Package, IndianRupee, AlertTriangle, Search } from "lucide-react";
 import { Input } from "../components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { useInventory } from "../context/InventoryContext";
+import { useAuth } from "../context/AuthContext";
 import { PageContainer } from "../components/layout/PageContainer";
 
 export function InventoryPage() {
-    const {
-        inventory,
-        getTotalInventoryValue,
-        getTotalInventoryCount,
-        getLowStockItems,
-    } = useInventory();
+    const { inventory } = useInventory();
+    const { profile, franchise } = useAuth();
 
     const [searchQuery, setSearchQuery] = useState("");
     const [filterCategory, setFilterCategory] = useState<string>("all");
 
-    const totalValue = getTotalInventoryValue();
-    const totalCount = getTotalInventoryCount();
-    const lowStockItems = getLowStockItems(20);
-    const uniqueCategories = Array.from(new Set(inventory.map((item) => item.category)));
+    // Franchise users: show only THEIR items. Admin: show all.
+    const myInventory = useMemo(() => {
+        if (profile?.role === "admin") return inventory;
+        if (!franchise?.id) return [];
+        return inventory.filter((item: any) => item.franchiseId === franchise.id);
+    }, [inventory, profile?.role, franchise?.id]);
+
+    const totalValue = useMemo(() =>
+        myInventory.reduce((sum: number, i: any) => sum + i.price * i.quantity, 0),
+        [myInventory]
+    );
+    const totalCount = useMemo(() =>
+        myInventory.reduce((sum: number, i: any) => sum + i.quantity, 0),
+        [myInventory]
+    );
+    const lowStockItems = useMemo(() =>
+        myInventory.filter((i: any) => i.quantity <= 20),
+        [myInventory]
+    );
+    const uniqueCategories = Array.from(new Set(myInventory.map((item: any) => item.category)));
 
     // Filter inventory based on search and category
-    const filteredInventory = inventory.filter((item) => {
+    const filteredInventory = myInventory.filter((item: any) => {
         const matchesSearch =
             item.itemName.toLowerCase().includes(searchQuery.toLowerCase()) ||
             item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||

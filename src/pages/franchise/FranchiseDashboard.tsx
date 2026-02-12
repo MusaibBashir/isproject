@@ -15,13 +15,19 @@ export function FranchiseDashboard() {
     const { profile, franchise, signOut } = useAuth();
     const { salesHistory, inventory, getLowStockItems } = useInventory();
 
+    // Only count this franchise's OWN inventory (exclude warehouse items)
+    const myInventory = useMemo(() =>
+        inventory.filter((item: any) => item.franchiseId && item.franchiseId === franchise?.id),
+        [inventory, franchise?.id]
+    );
+
     const analytics = useMemo(() => {
         const totalRevenue = salesHistory.reduce((sum: number, s: any) => sum + s.total, 0);
         const totalSales = salesHistory.length;
-        const totalItems = inventory.length;
-        const totalStock = inventory.reduce((sum: number, i: any) => sum + i.quantity, 0);
-        const lowStockItems = getLowStockItems(20);
-        const inventoryValue = inventory.reduce((sum: number, i: any) => sum + (i.price * i.quantity), 0);
+        const totalItems = myInventory.length;
+        const totalStock = myInventory.reduce((sum: number, i: any) => sum + i.quantity, 0);
+        const lowStockItems = getLowStockItems(20).filter((i: any) => i.franchiseId === franchise?.id);
+        const inventoryValue = myInventory.reduce((sum: number, i: any) => sum + (i.price * i.quantity), 0);
 
         // Top products
         const productSales: Record<string, { name: string; qty: number; revenue: number }> = {};
@@ -51,7 +57,7 @@ export function FranchiseDashboard() {
             totalRevenue, totalSales, totalItems, totalStock, lowStockItems,
             inventoryValue, topProducts, recentSales, todaySales, todayRevenue
         };
-    }, [salesHistory, inventory, getLowStockItems]);
+    }, [salesHistory, myInventory, getLowStockItems, franchise?.id]);
 
     const handleSignOut = async () => {
         await signOut();
