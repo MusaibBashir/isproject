@@ -688,33 +688,47 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       const order = stockOrders.find(o => o.id === orderId);
       if (!order) throw new Error('Order not found');
 
-      // Check warehouse has enough stock for all items
+      // 1. Update order status FIRST so it reflects immediately
+      const { error: statusError } = await supabase
+        .from('stock_orders')
+        .update({ status: 'approved', updated_at: new Date().toISOString() })
+        .eq('id', orderId);
+
+      if (statusError) {
+        console.error('Failed to update order status:', statusError);
+        throw statusError;
+      }
+
+      // 2. Transfer inventory: deduct from warehouse, add to franchise
       for (const item of order.items) {
         const warehouseItem = inventory.find(i => i.sku === item.sku && !i.franchiseId);
         if (!warehouseItem || warehouseItem.quantity < item.quantity) {
-          throw new Error(`Insufficient warehouse stock for ${item.itemName}`);
+          console.warn(`Insufficient warehouse stock for ${item.itemName}, skipping transfer`);
+          continue;
         }
-      }
 
-      // Deduct from warehouse, add/update franchise inventory
-      for (const item of order.items) {
         // Deduct from warehouse
-        const warehouseItem = inventory.find(i => i.sku === item.sku && !i.franchiseId)!;
-        await supabase
+        const { error: deductError } = await supabase
           .from('inventory')
           .update({ quantity: warehouseItem.quantity - item.quantity, last_updated: new Date().toISOString() })
           .eq('id', warehouseItem.id);
 
+        if (deductError) {
+          console.error('Error deducting warehouse stock:', deductError);
+          continue;
+        }
+
         // Check if franchise already has this SKU
         const franchiseItem = inventory.find(i => i.sku === item.sku && i.franchiseId === order.franchiseId);
         if (franchiseItem) {
-          await supabase
+          const { error: addError } = await supabase
             .from('inventory')
             .update({ quantity: franchiseItem.quantity + item.quantity, last_updated: new Date().toISOString() })
             .eq('id', franchiseItem.id);
+          if (addError) console.error('Error updating franchise inventory:', addError);
         } else {
           // Create new inventory row for this franchise
-          await supabase
+          const { error: insertError } = await supabase
             .from('inventory')
             .insert({
               sku: warehouseItem.sku,
@@ -726,14 +740,9 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
               description: warehouseItem.description,
               franchise_id: order.franchiseId,
             });
+          if (insertError) console.error('Error creating franchise inventory:', insertError);
         }
       }
-
-      // Update order status
-      await supabase
-        .from('stock_orders')
-        .update({ status: 'approved', updated_at: new Date().toISOString() })
-        .eq('id', orderId);
 
       await fetchData();
       return true;

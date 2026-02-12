@@ -3,6 +3,11 @@
 -- Run this in Supabase SQL Editor
 -- ============================================
 
+-- 0. Allow franchise users to VIEW admin warehouse inventory (franchise_id IS NULL)
+--    Without this, RLS blocks franchise users from seeing warehouse items
+CREATE POLICY "Franchise users can view warehouse inventory" ON inventory
+    FOR SELECT USING (franchise_id IS NULL);
+
 -- 1. Stock orders table (franchise requests stock from admin)
 CREATE TABLE IF NOT EXISTS stock_orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
