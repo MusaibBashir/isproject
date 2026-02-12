@@ -12,21 +12,23 @@ type ViewTab = "warehouse" | "all-franchises" | "per-franchise";
 
 export function AdminInventoryPage() {
     const { getAllFranchises } = useAuth();
-    const { inventory, getTotalInventoryValue } = useInventory();
+    const { inventory, getTotalInventoryValue, refreshData } = useInventory();
     const [franchises, setFranchises] = useState<Franchise[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<ViewTab>("warehouse");
     const [selectedFranchiseId, setSelectedFranchiseId] = useState<string>("");
     const [searchQuery, setSearchQuery] = useState("");
 
+    // Load franchises and refresh inventory on mount
     useEffect(() => {
         const load = async () => {
+            await refreshData();
             const data = await getAllFranchises();
             setFranchises(data);
             setIsLoading(false);
         };
         load();
-    }, [getAllFranchises]);
+    }, [getAllFranchises, refreshData]);
 
     // Separate admin warehouse vs franchise inventory
     const warehouseInventory = useMemo(() =>
@@ -39,13 +41,39 @@ export function AdminInventoryPage() {
         [inventory]
     );
 
-    // Per-franchise breakdown
+    // Per-franchise breakdown (discover franchise IDs from both franchise list and inventory)
     const franchiseBreakdown = useMemo(() => {
-        return franchises.map((f: Franchise) => {
-            const items = inventory.filter((item: InventoryItem) => item.franchiseId === f.id);
-            const totalStock = items.reduce((sum, i) => sum + i.quantity, 0);
-            const totalValue = items.reduce((sum, i) => sum + (i.price * i.quantity), 0);
-            return { ...f, items, totalStock, totalValue };
+        // Collect all unique franchise IDs from inventory
+        const inventoryFranchiseIds = new Set(
+            inventory
+                .filter((item: InventoryItem) => !!item.franchiseId)
+                .map((item: InventoryItem) => item.franchiseId as string)
+        );
+
+        // Merge with known franchises
+        const allFranchiseIds = new Set([
+            ...franchises.map((f: Franchise) => f.id),
+            ...inventoryFranchiseIds,
+        ]);
+
+        return Array.from(allFranchiseIds).map(fId => {
+            const known = franchises.find((f: Franchise) => f.id === fId);
+            const items = inventory.filter((item: InventoryItem) => item.franchiseId === fId);
+            const totalStock = items.reduce((sum: number, i: InventoryItem) => sum + i.quantity, 0);
+            const totalValue = items.reduce((sum: number, i: InventoryItem) => sum + (i.price * i.quantity), 0);
+            return {
+                id: fId,
+                name: known?.name || `Franchise ${fId.slice(0, 8)}`,
+                region: known?.region || '—',
+                state: known?.state || '—',
+                owner_id: known?.owner_id || '',
+                created_by: known?.created_by || '',
+                is_active: known?.is_active ?? true,
+                created_at: known?.created_at || '',
+                items,
+                totalStock,
+                totalValue,
+            };
         });
     }, [franchises, inventory]);
 
