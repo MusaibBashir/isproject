@@ -88,15 +88,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Get initial session
         supabase.auth.getSession().then(async ({ data: { session } }) => {
-            if (session?.user) {
-                setUser(session.user);
-                const prof = await fetchProfile(session.user.id);
-                setProfile(prof);
-                if (prof?.role === "franchise") {
-                    const fran = await fetchFranchise(session.user.id);
-                    setFranchise(fran);
+            try {
+                if (session?.user) {
+                    setUser(session.user);
+                    const prof = await fetchProfile(session.user.id);
+                    setProfile(prof);
+                    if (prof?.role === "franchise") {
+                        const fran = await fetchFranchise(session.user.id);
+                        setFranchise(fran);
+                    }
                 }
+            } catch (err) {
+                console.error("Error initializing auth:", err);
+            } finally {
+                setIsLoading(false);
             }
+        }).catch((err) => {
+            console.error("Error getting session:", err);
             setIsLoading(false);
         });
 

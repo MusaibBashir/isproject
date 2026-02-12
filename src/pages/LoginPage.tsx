@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -9,7 +9,7 @@ import { BarChart3, Lock, Mail, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 
 export function LoginPage() {
-    const { signIn, isLoading } = useAuth();
+    const { signIn, user, profile, isLoading } = useAuth();
     const navigate = useNavigate();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -39,6 +39,18 @@ export function LoginPage() {
             }, 500);
         }
     };
+
+    // If already authenticated, redirect to role-based dashboard
+    if (!isLoading && user) {
+        if (profile?.role === "admin") {
+            return <Navigate to="/admin" replace />;
+        }
+        if (profile?.role === "franchise") {
+            return <Navigate to="/dashboard" replace />;
+        }
+        // Profile exists but has unknown role, or profile missing — go to / which handles this
+        return <Navigate to="/" replace />;
+    }
 
     if (isLoading) {
         return (
