@@ -25,6 +25,7 @@ interface AuthContextType {
     franchise: Franchise | null;
     isLoading: boolean;
     isAdmin: boolean;
+    error: string | null;
     signIn: (email: string, password: string) => Promise<{ error: string | null }>;
     signOut: () => Promise<void>;
     createFranchiseUser: (
@@ -46,20 +47,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [franchise, setFranchise] = useState<Franchise | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [authError, setAuthError] = useState<string | null>(null);
 
     const fetchProfile = useCallback(async (userId: string) => {
         if (!supabase) return null;
         try {
+            console.log("[Auth] Fetching profile for:", userId);
             const { data, error } = await supabase
                 .from("profiles")
                 .select("*")
                 .eq("id", userId)
                 .single();
+
             if (error) {
-                console.error("Profile fetch error:", error.message, "Code:", error.code, "Details:", error.details);
-                throw error;
+                console.error("Profile fetch error detected:", error.message, "Code:", error.code);
+                // We return null here, but the caller will handle retries.
+                // If it persists, the caller sets the global authError.
+                return null;
             }
-            console.log("Profile loaded:", data);
+            console.log("[Auth] Profile found:", data?.role);
             return data as UserProfile;
         } catch (err: any) {
             console.error("Error fetching profile:", err?.message || err);
@@ -111,11 +117,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     if (!isMounted) return;
                 }
 
-                setProfile(prof);
-                if (prof?.role === "franchise") {
-                    const fran = await fetchFranchise(authUser.id);
-                    if (!isMounted) return;
-                    setFranchise(fran);
+                if (!prof) {
+                    console.error("[Auth] Profile fetch failed after retry.");
+                    setAuthError("Failed to load user profile. If you just signed up, please wait or contact admin.");
+                    // We do NOT set profile to null here if we want to distinguish "loading" from "missing"
+                    // But currently profile is null.
+                } else {
+                    setAuthError(null);
+                    setProfile(prof);
+                    if (prof.role === "franchise") {
+                        const fran = await fetchFranchise(authUser.id);
+                        if (!isMounted) return;
+                        setFranchise(fran);
+                    }
                 }
             } finally {
                 isLoadingUserData = false;
@@ -129,11 +143,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 if (!isMounted) return;
 
                 if (session?.user) {
+                    // Only load data if we typically shouldn't have it yet or if forced
                     await loadUserData(session.user);
                 } else {
                     setUser(null);
                     setProfile(null);
                     setFranchise(null);
+                    setAuthError(null);
                 }
 
                 // After handling the initial session (or lack thereof), stop loading
@@ -162,6 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const signIn = async (email: string, password: string) => {
         if (!supabase) return { error: "Supabase not available" };
         try {
+            setAuthError(null); // Clear previous errors on new attempt
             const { error } = await supabase.auth.signInWithPassword({ email, password });
             if (error) return { error: error.message };
             return { error: null };
@@ -176,6 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setProfile(null);
         setFranchise(null);
+        setAuthError(null);
     };
 
     const createFranchiseUser = async (
@@ -262,6 +280,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 franchise,
                 isLoading,
                 isAdmin: profile?.role === "admin",
+                error: authError,
                 signIn,
                 signOut,
                 createFranchiseUser,
