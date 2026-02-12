@@ -25,9 +25,14 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
         return <Navigate to="/login" replace />;
     }
 
-    if (requiredRole && profile?.role !== requiredRole) {
+    // Profile not loaded — redirect to root which shows explanatory message
+    if (!profile) {
+        return <Navigate to="/" replace />;
+    }
+
+    if (requiredRole && profile.role !== requiredRole) {
         // Redirect to appropriate dashboard based on role
-        const redirectPath = profile?.role === "admin" ? "/admin" : "/dashboard";
+        const redirectPath = profile.role === "admin" ? "/admin" : "/dashboard";
         return <Navigate to={redirectPath} replace />;
     }
 

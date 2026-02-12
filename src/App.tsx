@@ -39,7 +39,33 @@ function RoleRedirect() {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
-  if (profile?.role === "admin") return <Navigate to="/admin" replace />;
+
+  // If profile hasn't loaded yet (missing profiles row), show a helpful message
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md p-8 bg-white rounded-xl shadow-sm border border-gray-200">
+          <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-orange-600 text-xl font-bold">!</span>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Profile Not Found</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Your user account exists but no profile was created. Please contact your administrator
+            or run the migration script to set up the profiles table and trigger.
+          </p>
+          <p className="text-xs text-gray-400 mb-4">User ID: {user.id}</p>
+          <button
+            onClick={() => { window.location.href = "/login"; }}
+            className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm hover:bg-gray-800"
+          >
+            Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (profile.role === "admin") return <Navigate to="/admin" replace />;
   return <Navigate to="/dashboard" replace />;
 }
 
