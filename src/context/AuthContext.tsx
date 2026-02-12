@@ -83,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
-    // Initialize auth state
+    // Initialize auth state — use onAuthStateChange as single source of truth
     useEffect(() => {
         if (!supabase) {
             setIsLoading(false);
@@ -91,48 +91,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         let isMounted = true;
+        let isLoadingUserData = false;
 
-        // Helper to load profile + franchise
+        // Helper to load profile + franchise (with concurrency guard and retry)
         const loadUserData = async (authUser: any) => {
-            setUser(authUser);
-            const prof = await fetchProfile(authUser.id);
-            if (!isMounted) return;
-            setProfile(prof);
-            if (prof?.role === "franchise") {
-                const fran = await fetchFranchise(authUser.id);
-                if (!isMounted) return;
-                setFranchise(fran);
-            }
-        };
-
-        // 1. Get initial session (reliable, always resolves)
-        const initAuth = async () => {
+            if (isLoadingUserData) return; // prevent concurrent loads
+            isLoadingUserData = true;
             try {
-                console.log("[Auth] Getting session...");
-                const { data: { session } } = await supabase!.auth.getSession();
-                console.log("[Auth] Session:", session ? "found" : "none");
-                if (session?.user && isMounted) {
-                    await loadUserData(session.user);
-                    console.log("[Auth] User data loaded");
+                setUser(authUser);
+                let prof = await fetchProfile(authUser.id);
+                if (!isMounted) return;
+
+                // Retry once if profile fetch failed (transient RLS / timing issue)
+                if (!prof) {
+                    console.warn("[Auth] Profile fetch returned null, retrying in 500ms...");
+                    await new Promise(r => setTimeout(r, 500));
+                    if (!isMounted) return;
+                    prof = await fetchProfile(authUser.id);
+                    if (!isMounted) return;
                 }
-            } catch (err) {
-                console.error("[Auth] Error initializing:", err);
+
+                setProfile(prof);
+                if (prof?.role === "franchise") {
+                    const fran = await fetchFranchise(authUser.id);
+                    if (!isMounted) return;
+                    setFranchise(fran);
+                }
             } finally {
-                if (isMounted) {
-                    console.log("[Auth] Setting isLoading = false");
-                    setIsLoading(false);
-                }
+                isLoadingUserData = false;
             }
         };
-        initAuth();
 
-        // 2. Listen for SUBSEQUENT auth changes only (sign in, sign out, token refresh)
+        // Single listener handles ALL auth events including initial session restoration
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event, session) => {
                 console.log("[Auth] onAuthStateChange event:", event);
-                // Skip initial session — already handled above
-                if (event === 'INITIAL_SESSION') return;
-
                 if (!isMounted) return;
 
                 if (session?.user) {
@@ -142,16 +135,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     setProfile(null);
                     setFranchise(null);
                 }
+
+                // After handling the initial session (or lack thereof), stop loading
+                if (event === 'INITIAL_SESSION') {
+                    console.log("[Auth] Initial session processed, setting isLoading = false");
+                    setIsLoading(false);
+                }
             }
         );
 
-        // 3. Hard safety timeout — ALWAYS resolves loading after 5 seconds
+        // Hard safety timeout — ALWAYS resolves loading after 8 seconds
         const safetyTimeout = setTimeout(() => {
             if (isMounted) {
                 console.warn("[Auth] Safety timeout triggered — forcing isLoading = false");
                 setIsLoading(false);
             }
-        }, 5000);
+        }, 8000);
 
         return () => {
             isMounted = false;
