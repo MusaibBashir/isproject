@@ -19,7 +19,11 @@ import { LoginPage } from "./pages/LoginPage";
 import { AdminDashboard } from "./pages/admin/AdminDashboard";
 import { ManageFranchisesPage } from "./pages/admin/ManageFranchisesPage";
 import { FranchiseDetailPage } from "./pages/admin/FranchiseDetailPage";
+import { FinancialReportsPage } from "./pages/admin/FinancialReportsPage";
+import { AdminInventoryPage } from "./pages/admin/AdminInventoryPage";
+import { StockOrdersPage } from "./pages/admin/StockOrdersPage";
 import { FranchiseDashboard } from "./pages/franchise/FranchiseDashboard";
+import { OrderStockPage } from "./pages/franchise/OrderStockPage";
 import {
   SalesPage,
   AddItemsPage,
@@ -87,13 +91,19 @@ export default function App() {
             <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminDashboard /></ProtectedRoute>} />
             <Route path="/admin/franchises" element={<ProtectedRoute requiredRole="admin"><ManageFranchisesPage /></ProtectedRoute>} />
             <Route path="/admin/franchise/:id" element={<ProtectedRoute requiredRole="admin"><FranchiseDetailPage /></ProtectedRoute>} />
+            <Route path="/admin/reports" element={<ProtectedRoute requiredRole="admin"><FinancialReportsPage /></ProtectedRoute>} />
+            <Route path="/admin/inventory" element={<ProtectedRoute requiredRole="admin"><AdminInventoryPage /></ProtectedRoute>} />
+            <Route path="/admin/stock-orders" element={<ProtectedRoute requiredRole="admin"><StockOrdersPage /></ProtectedRoute>} />
 
             {/* Franchise dashboard */}
             <Route path="/dashboard" element={<ProtectedRoute requiredRole="franchise"><FranchiseDashboard /></ProtectedRoute>} />
+            <Route path="/order-stock" element={<ProtectedRoute requiredRole="franchise"><OrderStockPage /></ProtectedRoute>} />
+
+            {/* Role-specific shared pages */}
+            <Route path="/sales" element={<ProtectedRoute requiredRole="franchise"><SalesPage /></ProtectedRoute>} />
+            <Route path="/add-items" element={<ProtectedRoute requiredRole="admin"><AddItemsPage /></ProtectedRoute>} />
 
             {/* Shared routes (both roles) */}
-            <Route path="/sales" element={<ProtectedRoute><SalesPage /></ProtectedRoute>} />
-            <Route path="/add-items" element={<ProtectedRoute><AddItemsPage /></ProtectedRoute>} />
             <Route path="/inventory" element={<ProtectedRoute><InventoryPage /></ProtectedRoute>} />
             <Route path="/forecast" element={<ProtectedRoute><ForecastPage /></ProtectedRoute>} />
             <Route path="/sales-history" element={<ProtectedRoute><SalesHistoryPage /></ProtectedRoute>} />

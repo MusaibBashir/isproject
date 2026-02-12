@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Menu, Plus, Package, TrendingUp, IndianRupee, Store, BarChart3, Users, History, LogOut, Home } from "lucide-react";
+import { Menu, Plus, Package, TrendingUp, IndianRupee, Store, BarChart3, Users, History, LogOut, Home, FileText, ClipboardList, ShoppingCart } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -21,11 +21,11 @@ export function HamburgerMenu() {
   const adminItems = [
     { label: "Admin Dashboard", icon: Home, to: "/admin" },
     { label: "Manage Franchises", icon: Store, to: "/admin/franchises" },
+    { label: "Financial Reports", icon: FileText, to: "/admin/reports" },
     { label: "Analytics", icon: BarChart3, to: "/analytics" },
-    { label: "Sales", icon: IndianRupee, to: "/sales" },
     { label: "Add Items", icon: Plus, to: "/add-items" },
-    { label: "Inventory Details", icon: Package, to: "/inventory" },
-    { label: "Sales History", icon: History, to: "/sales-history" },
+    { label: "Inventory Details", icon: Package, to: "/admin/inventory" },
+    { label: "Stock Orders", icon: ClipboardList, to: "/admin/stock-orders" },
     { label: "Customers", icon: Users, to: "/customers" },
     { label: "Forecast", icon: TrendingUp, to: "/forecast" },
   ];
@@ -33,8 +33,8 @@ export function HamburgerMenu() {
   const franchiseItems = [
     { label: "Dashboard", icon: Home, to: "/dashboard" },
     { label: "Sales", icon: IndianRupee, to: "/sales" },
-    { label: "Add Items", icon: Plus, to: "/add-items" },
     { label: "Inventory Details", icon: Package, to: "/inventory" },
+    { label: "Order Stock", icon: ShoppingCart, to: "/order-stock" },
     { label: "Sales History", icon: History, to: "/sales-history" },
     { label: "Customers", icon: Users, to: "/customers" },
     { label: "Forecast", icon: TrendingUp, to: "/forecast" },

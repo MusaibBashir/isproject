@@ -42,10 +42,28 @@ export interface Customer {
   createdAt: string;
 }
 
+export interface StockOrderItem {
+  sku: string;
+  itemName: string;
+  quantity: number;
+}
+
+export interface StockOrder {
+  id: string;
+  franchiseId: string;
+  franchiseName: string;
+  items: StockOrderItem[];
+  status: 'pending' | 'approved' | 'rejected';
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface InventoryContextType {
   inventory: InventoryItem[];
   salesHistory: SaleRecord[];
   customers: Customer[];
+  stockOrders: StockOrder[];
   isLoading: boolean;
   error: string | null;
   addInventoryItem: (item: Omit<InventoryItem, "id" | "dateAdded" | "lastUpdated">) => Promise<boolean>;
@@ -60,6 +78,9 @@ interface InventoryContextType {
   getTotalInventoryCount: () => number;
   getLowStockItems: (threshold?: number) => InventoryItem[];
   refreshData: () => Promise<void>;
+  createStockOrder: (order: { franchiseId: string; franchiseName: string; items: StockOrderItem[]; notes?: string }) => Promise<boolean>;
+  approveStockOrder: (orderId: string) => Promise<boolean>;
+  rejectStockOrder: (orderId: string) => Promise<boolean>;
 }
 
 
@@ -74,6 +95,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [salesHistory, setSalesHistory] = useState<SaleRecord[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [stockOrders, setStockOrders] = useState<StockOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -128,13 +150,14 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     const franchiseId = auth?.franchise?.id;
 
     try {
-      // Fetch inventory — franchise users only see their own
+      // Fetch inventory — admin sees all, franchise sees own + admin warehouse
       let inventoryQuery = supabase
         .from('inventory')
         .select('*')
         .order('item_name');
       if (!isAdmin && franchiseId) {
-        inventoryQuery = inventoryQuery.eq('franchise_id', franchiseId);
+        // Franchise users see their own inventory + admin warehouse (franchise_id is null)
+        inventoryQuery = inventoryQuery.or(`franchise_id.eq.${franchiseId},franchise_id.is.null`);
       }
       const { data: inventoryData, error: inventoryError } = await inventoryQuery;
 
@@ -189,6 +212,52 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       }));
       setSalesHistory(mappedSales);
 
+      // Fetch stock orders
+      try {
+        let ordersQuery = supabase
+          .from('stock_orders')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (!isAdmin && franchiseId) {
+          ordersQuery = ordersQuery.eq('franchise_id', franchiseId);
+        }
+        const { data: ordersData, error: ordersError } = await ordersQuery;
+
+        if (!ordersError && ordersData) {
+          // Fetch items for each order
+          const orderIds = ordersData.map((o: any) => o.id);
+          let allOrderItems: any[] = [];
+          if (orderIds.length > 0) {
+            const { data: itemsData } = await supabase
+              .from('stock_order_items')
+              .select('*')
+              .in('order_id', orderIds);
+            allOrderItems = itemsData || [];
+          }
+
+          const mapped: StockOrder[] = ordersData.map((o: any) => ({
+            id: o.id,
+            franchiseId: o.franchise_id,
+            franchiseName: o.franchise_name,
+            status: o.status,
+            notes: o.notes,
+            createdAt: o.created_at,
+            updatedAt: o.updated_at,
+            items: allOrderItems
+              .filter((i: any) => i.order_id === o.id)
+              .map((i: any) => ({
+                sku: i.sku,
+                itemName: i.item_name,
+                quantity: i.quantity,
+              })),
+          }));
+          setStockOrders(mapped);
+        }
+      } catch (stockErr) {
+        // Stock orders table may not exist yet — silently skip
+        console.warn('Stock orders fetch skipped:', stockErr);
+      }
+
     } catch (err: any) {
       console.error('Error fetching data:', err);
       setError(err.message || 'Failed to fetch data');
@@ -232,10 +301,9 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         quantity: item.quantity,
         description: item.description,
       };
-      // Add franchise_id if available
-      if (authContext?.franchise?.id) {
-        insertData.franchise_id = authContext.franchise.id;
-      }
+      // Admin adds to warehouse (franchise_id stays null)
+      // Only franchise users would have franchise_id, but they shouldn't add items
+      // This keeps it as admin warehouse stock
       const { data, error } = await supabase
         .from('inventory')
         .insert(insertData)
@@ -568,12 +636,140 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     await fetchData();
   };
 
+  // Create a stock order (franchise requests stock from admin)
+  const createStockOrder = async (order: {
+    franchiseId: string;
+    franchiseName: string;
+    items: StockOrderItem[];
+    notes?: string;
+  }): Promise<boolean> => {
+    if (!isSupabaseAvailable() || !supabase) return false;
+    try {
+      // Insert the order
+      const { data: orderData, error: orderError } = await supabase
+        .from('stock_orders')
+        .insert({
+          franchise_id: order.franchiseId,
+          franchise_name: order.franchiseName,
+          notes: order.notes || null,
+          status: 'pending',
+        })
+        .select()
+        .single();
+
+      if (orderError) throw orderError;
+
+      // Insert the items
+      const itemsInsert = order.items.map(item => ({
+        order_id: orderData.id,
+        sku: item.sku,
+        item_name: item.itemName,
+        quantity: item.quantity,
+      }));
+      const { error: itemsError } = await supabase
+        .from('stock_order_items')
+        .insert(itemsInsert);
+
+      if (itemsError) throw itemsError;
+
+      await fetchData();
+      return true;
+    } catch (err: any) {
+      console.error('Error creating stock order:', err);
+      setError(err.message);
+      return false;
+    }
+  };
+
+  // Approve a stock order (admin: deduct from warehouse, add to franchise)
+  const approveStockOrder = async (orderId: string): Promise<boolean> => {
+    if (!isSupabaseAvailable() || !supabase) return false;
+    try {
+      const order = stockOrders.find(o => o.id === orderId);
+      if (!order) throw new Error('Order not found');
+
+      // Check warehouse has enough stock for all items
+      for (const item of order.items) {
+        const warehouseItem = inventory.find(i => i.sku === item.sku && !i.franchiseId);
+        if (!warehouseItem || warehouseItem.quantity < item.quantity) {
+          throw new Error(`Insufficient warehouse stock for ${item.itemName}`);
+        }
+      }
+
+      // Deduct from warehouse, add/update franchise inventory
+      for (const item of order.items) {
+        // Deduct from warehouse
+        const warehouseItem = inventory.find(i => i.sku === item.sku && !i.franchiseId)!;
+        await supabase
+          .from('inventory')
+          .update({ quantity: warehouseItem.quantity - item.quantity, last_updated: new Date().toISOString() })
+          .eq('id', warehouseItem.id);
+
+        // Check if franchise already has this SKU
+        const franchiseItem = inventory.find(i => i.sku === item.sku && i.franchiseId === order.franchiseId);
+        if (franchiseItem) {
+          await supabase
+            .from('inventory')
+            .update({ quantity: franchiseItem.quantity + item.quantity, last_updated: new Date().toISOString() })
+            .eq('id', franchiseItem.id);
+        } else {
+          // Create new inventory row for this franchise
+          await supabase
+            .from('inventory')
+            .insert({
+              sku: warehouseItem.sku,
+              barcode: warehouseItem.barcode,
+              item_name: warehouseItem.itemName,
+              category: warehouseItem.category,
+              price: warehouseItem.price,
+              quantity: item.quantity,
+              description: warehouseItem.description,
+              franchise_id: order.franchiseId,
+            });
+        }
+      }
+
+      // Update order status
+      await supabase
+        .from('stock_orders')
+        .update({ status: 'approved', updated_at: new Date().toISOString() })
+        .eq('id', orderId);
+
+      await fetchData();
+      return true;
+    } catch (err: any) {
+      console.error('Error approving stock order:', err);
+      setError(err.message);
+      return false;
+    }
+  };
+
+  // Reject a stock order
+  const rejectStockOrder = async (orderId: string): Promise<boolean> => {
+    if (!isSupabaseAvailable() || !supabase) return false;
+    try {
+      const { error } = await supabase
+        .from('stock_orders')
+        .update({ status: 'rejected', updated_at: new Date().toISOString() })
+        .eq('id', orderId);
+
+      if (error) throw error;
+      await fetchData();
+      return true;
+    } catch (err: any) {
+      console.error('Error rejecting stock order:', err);
+      setError(err.message);
+      return false;
+    }
+  };
+
   return (
     <InventoryContext.Provider
       value={{
         inventory,
         salesHistory,
         customers,
+        stockOrders,
         isLoading,
         error,
         addInventoryItem,
@@ -588,6 +784,9 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         getTotalInventoryCount,
         getLowStockItems,
         refreshData,
+        createStockOrder,
+        approveStockOrder,
+        rejectStockOrder,
       }}
     >
       {children}

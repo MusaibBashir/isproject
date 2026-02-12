@@ -7,7 +7,7 @@ import { Button } from "../../components/ui/button";
 import { HamburgerMenu } from "../../components/HamburgerMenu";
 import {
     BarChart3, TrendingUp, Package, IndianRupee, ShoppingCart,
-    Users, AlertCircle, LogOut, Store, MapPin
+    Users, AlertCircle, LogOut, Store, MapPin, Truck
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -175,8 +175,8 @@ export function FranchiseDashboard() {
                                         <div key={p.sku} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                                             <div className="flex items-center gap-3">
                                                 <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 ? "bg-yellow-100 text-yellow-700" :
-                                                        i === 1 ? "bg-gray-200 text-gray-600" :
-                                                            "bg-gray-100 text-gray-500"
+                                                    i === 1 ? "bg-gray-200 text-gray-600" :
+                                                        "bg-gray-100 text-gray-500"
                                                     }`}>
                                                     {i + 1}
                                                 </span>
@@ -242,7 +242,7 @@ export function FranchiseDashboard() {
                 <div className="grid grid-cols-4 gap-4">
                     {[
                         { to: "/sales", icon: ShoppingCart, label: "New Sale", color: "bg-blue-100 text-blue-600" },
-                        { to: "/add-items", icon: Package, label: "Add Inventory", color: "bg-green-100 text-green-600" },
+                        { to: "/order-stock", icon: Truck, label: "Order Stock", color: "bg-green-100 text-green-600" },
                         { to: "/inventory", icon: BarChart3, label: "View Inventory", color: "bg-orange-100 text-orange-600" },
                         { to: "/customers", icon: Users, label: "Customers", color: "bg-purple-100 text-purple-600" },
                     ].map((link) => (
