@@ -118,17 +118,25 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     setError(null);
 
+    // Determine franchise filtering
+    const isAdmin = authContext?.profile?.role === 'admin';
+    const franchiseId = authContext?.franchise?.id;
+
     try {
-      // Fetch inventory (RLS handles filtering, but we also filter client-side for admin views)
-      const { data: inventoryData, error: inventoryError } = await supabase
+      // Fetch inventory — franchise users only see their own
+      let inventoryQuery = supabase
         .from('inventory')
         .select('*')
         .order('item_name');
+      if (!isAdmin && franchiseId) {
+        inventoryQuery = inventoryQuery.eq('franchise_id', franchiseId);
+      }
+      const { data: inventoryData, error: inventoryError } = await inventoryQuery;
 
       if (inventoryError) throw inventoryError;
       setInventory((inventoryData || []).map(mapInventoryRow));
 
-      // Fetch customers
+      // Fetch customers (shared table — no franchise filtering for now)
       const { data: customersData, error: customersError } = await supabase
         .from('customers')
         .select('*')
@@ -137,8 +145,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       if (customersError) throw customersError;
       setCustomers((customersData || []).map(mapCustomerRow));
 
-      // Fetch sales with items (RLS handles filtering)
-      const { data: salesData, error: salesError } = await supabase
+      // Fetch sales with items — franchise users only see their own
+      let salesQuery = supabase
         .from('sales')
         .select(`
           id,
@@ -154,6 +162,10 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
           )
         `)
         .order('date', { ascending: false });
+      if (!isAdmin && franchiseId) {
+        salesQuery = salesQuery.eq('franchise_id', franchiseId);
+      }
+      const { data: salesData, error: salesError } = await salesQuery;
 
       if (salesError) throw salesError;
 
@@ -180,7 +192,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [authContext?.profile?.role, authContext?.franchise?.id]);
 
   // Initial data fetch
   useEffect(() => {
