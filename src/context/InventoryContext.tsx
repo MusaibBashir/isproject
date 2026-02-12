@@ -703,129 +703,202 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Approve a stock order (admin: deduct from warehouse, add to franchise)
+  // Approve a stock order (admin: transfer inventory from warehouse to franchise)
+  // Updates the franchise_id column from NULL to the franchise's ID
   const approveStockOrder = async (orderId: string): Promise<boolean> => {
     if (!isSupabaseAvailable() || !supabase) return false;
     try {
-      const order = stockOrders.find(o => o.id === orderId);
-      if (!order) throw new Error('Order not found');
+      const order = stockOrders.find((o: any) => o.id === orderId);
+      if (!order) {
+        alert('[approveStockOrder] Order not found in local state: ' + orderId);
+        throw new Error('Order not found');
+      }
 
-      console.log('[approveStockOrder] Starting approval for order:', orderId);
-      console.log('[approveStockOrder] Franchise:', order.franchiseId, 'Items:', order.items.length);
+      console.log('[approveStockOrder] === STARTING APPROVAL ===');
+      console.log('[approveStockOrder] OrderId:', orderId);
+      console.log('[approveStockOrder] FranchiseId:', order.franchiseId);
+      console.log('[approveStockOrder] Items count:', order.items.length);
+      console.log('[approveStockOrder] Items:', JSON.stringify(order.items));
 
-      // 1. Update order status FIRST so it reflects immediately
-      const { error: statusError } = await supabase
+      if (!order.items || order.items.length === 0) {
+        alert('[approveStockOrder] Order has NO ITEMS! Cannot transfer inventory.');
+        // Still update status
+        await supabase
+          .from('stock_orders')
+          .update({ status: 'approved', updated_at: new Date().toISOString() })
+          .eq('id', orderId);
+        await fetchData();
+        return true;
+      }
+
+      // 1. Update order status
+      const { data: statusData, error: statusError } = await supabase
         .from('stock_orders')
         .update({ status: 'approved', updated_at: new Date().toISOString() })
-        .eq('id', orderId);
+        .eq('id', orderId)
+        .select();
 
       if (statusError) {
-        console.error('[approveStockOrder] Failed to update order status:', statusError);
+        alert('[approveStockOrder] Failed to update order status: ' + statusError.message);
         throw statusError;
       }
-      console.log('[approveStockOrder] ✓ Status updated to approved');
+      console.log('[approveStockOrder] ✓ Status updated. Rows affected:', statusData?.length);
 
-      // 2. Fetch FRESH inventory from Supabase (avoid stale state issues)
+      // 2. Fetch FRESH inventory from Supabase
       const { data: freshInventory, error: fetchError } = await supabase
         .from('inventory')
         .select('*');
 
       if (fetchError || !freshInventory) {
-        console.error('[approveStockOrder] Failed to fetch fresh inventory:', fetchError);
+        alert('[approveStockOrder] Failed to fetch inventory: ' + (fetchError?.message || 'no data'));
         await fetchData();
-        return true; // Status was already updated
+        return true;
       }
-      console.log('[approveStockOrder] ✓ Fetched', freshInventory.length, 'inventory rows');
 
-      // 3. Transfer inventory: deduct from warehouse, add to franchise
+      const warehouseItems = freshInventory.filter((r: any) => r.franchise_id === null);
+      console.log('[approveStockOrder] ✓ Total inventory rows:', freshInventory.length);
+      console.log('[approveStockOrder] ✓ Warehouse rows (franchise_id=null):', warehouseItems.length);
+      console.log('[approveStockOrder] ✓ Warehouse SKUs:', warehouseItems.map((r: any) => r.sku));
+
+      // 3. Transfer: update franchise_id from NULL to franchise ID
+      let successCount = 0;
+      let failCount = 0;
+
       for (const item of order.items) {
-        console.log('[approveStockOrder] Processing item:', item.sku, item.itemName, 'qty:', item.quantity);
+        console.log('[approveStockOrder] --- Processing:', item.sku, item.itemName, 'qty:', item.quantity);
 
-        // Find warehouse item (franchise_id IS NULL) matching this SKU
-        const warehouseRow = freshInventory.find(
-          (r: any) => r.sku === item.sku && r.franchise_id === null
+        // Find warehouse row (franchise_id IS NULL) matching this SKU
+        const warehouseRow = warehouseItems.find(
+          (r: any) => r.sku === item.sku
         );
 
         if (!warehouseRow) {
-          console.error('[approveStockOrder] ✗ No warehouse row found for SKU:', item.sku);
-          console.log('[approveStockOrder] Available warehouse SKUs:', freshInventory.filter((r: any) => r.franchise_id === null).map((r: any) => r.sku));
+          const msg = `No warehouse row for SKU "${item.sku}". Available: ${warehouseItems.map((r: any) => r.sku).join(', ')}`;
+          console.error('[approveStockOrder] ✗', msg);
+          alert('[approveStockOrder] ' + msg);
+          failCount++;
           continue;
         }
 
         if (warehouseRow.quantity < item.quantity) {
-          console.warn('[approveStockOrder] ✗ Insufficient stock for', item.sku, '- have:', warehouseRow.quantity, 'need:', item.quantity);
+          console.warn('[approveStockOrder] ✗ Insufficient stock:', warehouseRow.quantity, '<', item.quantity);
+          failCount++;
           continue;
         }
 
-        console.log('[approveStockOrder] Warehouse row found, id:', warehouseRow.id, 'current qty:', warehouseRow.quantity);
-
-        // Deduct from warehouse
-        const newWarehouseQty = warehouseRow.quantity - item.quantity;
-        const { error: deductError } = await supabase
-          .from('inventory')
-          .update({
-            quantity: newWarehouseQty,
-            last_updated: new Date().toISOString()
-          })
-          .eq('id', warehouseRow.id);
-
-        if (deductError) {
-          console.error('[approveStockOrder] ✗ Error deducting warehouse stock:', deductError);
-          continue;
-        }
-        console.log('[approveStockOrder] ✓ Deducted from warehouse:', warehouseRow.quantity, '->', newWarehouseQty);
+        console.log('[approveStockOrder] Warehouse row:', { id: warehouseRow.id, sku: warehouseRow.sku, qty: warehouseRow.quantity, franchise_id: warehouseRow.franchise_id });
 
         // Check if franchise already has this SKU
         const franchiseRow = freshInventory.find(
           (r: any) => r.sku === item.sku && r.franchise_id === order.franchiseId
         );
 
-        if (franchiseRow) {
-          // Update existing franchise inventory row
-          const newFranchiseQty = franchiseRow.quantity + item.quantity;
-          const { error: addError } = await supabase
+        if (item.quantity === warehouseRow.quantity && !franchiseRow) {
+          // CASE 1: Exact match — just update franchise_id on existing row
+          console.log('[approveStockOrder] CASE 1: Transferring entire row (updating franchise_id)');
+          const { data: transferData, error: transferError } = await supabase
             .from('inventory')
             .update({
-              quantity: newFranchiseQty,
+              franchise_id: order.franchiseId,
               last_updated: new Date().toISOString()
             })
-            .eq('id', franchiseRow.id);
-          if (addError) {
-            console.error('[approveStockOrder] ✗ Error updating franchise inventory:', addError);
+            .eq('id', warehouseRow.id)
+            .select();
+
+          if (transferError) {
+            console.error('[approveStockOrder] ✗ Transfer error:', transferError);
+            alert('[approveStockOrder] Transfer failed: ' + transferError.message);
+            failCount++;
           } else {
-            console.log('[approveStockOrder] ✓ Updated franchise inventory:', franchiseRow.quantity, '->', newFranchiseQty);
+            console.log('[approveStockOrder] ✓ Transfer result (rows returned):', transferData?.length, transferData);
+            if (!transferData || transferData.length === 0) {
+              alert('[approveStockOrder] UPDATE returned 0 rows! RLS may be blocking. Row id: ' + warehouseRow.id);
+              failCount++;
+            } else {
+              successCount++;
+            }
           }
         } else {
-          // Create new inventory row for this franchise
-          const insertPayload = {
-            sku: warehouseRow.sku,
-            barcode: warehouseRow.barcode,
-            item_name: warehouseRow.item_name,
-            category: warehouseRow.category,
-            price: warehouseRow.price,
-            quantity: item.quantity,
-            description: warehouseRow.description,
-            franchise_id: order.franchiseId,
-          };
-          console.log('[approveStockOrder] Inserting new franchise inventory row:', insertPayload);
-          const { data: insertData, error: insertError } = await supabase
+          // CASE 2: Partial qty or franchise already has this SKU
+          console.log('[approveStockOrder] CASE 2: Splitting - reduce warehouse, add to franchise');
+
+          // Reduce warehouse quantity
+          const newWarehouseQty = warehouseRow.quantity - item.quantity;
+          const { data: deductData, error: deductError } = await supabase
             .from('inventory')
-            .insert(insertPayload)
+            .update({
+              quantity: newWarehouseQty,
+              last_updated: new Date().toISOString()
+            })
+            .eq('id', warehouseRow.id)
             .select();
-          if (insertError) {
-            console.error('[approveStockOrder] ✗ Error creating franchise inventory:', insertError);
+
+          if (deductError) {
+            console.error('[approveStockOrder] ✗ Deduction error:', deductError);
+            alert('[approveStockOrder] Deduction failed: ' + deductError.message);
+            failCount++;
+            continue;
+          }
+          console.log('[approveStockOrder] ✓ Deduction result:', deductData?.length, 'rows. New qty:', newWarehouseQty);
+
+          if (franchiseRow) {
+            // Add to existing franchise row
+            const newFranchiseQty = franchiseRow.quantity + item.quantity;
+            const { data: addData, error: addError } = await supabase
+              .from('inventory')
+              .update({
+                quantity: newFranchiseQty,
+                last_updated: new Date().toISOString()
+              })
+              .eq('id', franchiseRow.id)
+              .select();
+
+            if (addError) {
+              console.error('[approveStockOrder] ✗ Franchise update error:', addError);
+              failCount++;
+            } else {
+              console.log('[approveStockOrder] ✓ Franchise updated:', addData?.length, 'rows. New qty:', newFranchiseQty);
+              successCount++;
+            }
           } else {
-            console.log('[approveStockOrder] ✓ Created franchise inventory row:', insertData);
+            // Create new franchise row
+            const insertPayload = {
+              sku: warehouseRow.sku,
+              barcode: warehouseRow.barcode,
+              item_name: warehouseRow.item_name,
+              category: warehouseRow.category,
+              price: warehouseRow.price,
+              quantity: item.quantity,
+              description: warehouseRow.description,
+              franchise_id: order.franchiseId,
+            };
+            console.log('[approveStockOrder] Inserting:', insertPayload);
+            const { data: insertData, error: insertError } = await supabase
+              .from('inventory')
+              .insert(insertPayload)
+              .select();
+
+            if (insertError) {
+              console.error('[approveStockOrder] ✗ Insert error:', insertError);
+              alert('[approveStockOrder] Insert failed: ' + insertError.message + '\nPayload: ' + JSON.stringify(insertPayload));
+              failCount++;
+            } else {
+              console.log('[approveStockOrder] ✓ Inserted:', insertData?.length, 'rows:', insertData);
+              successCount++;
+            }
           }
         }
       }
 
-      console.log('[approveStockOrder] ✓ All items processed, refreshing data...');
+      console.log('[approveStockOrder] === DONE ===', successCount, 'succeeded,', failCount, 'failed');
+      if (failCount > 0) {
+        alert(`[approveStockOrder] ${failCount} item(s) failed to transfer. Check console for details.`);
+      }
       await fetchData();
-      console.log('[approveStockOrder] ✓ Data refreshed');
       return true;
     } catch (err: any) {
       console.error('[approveStockOrder] FATAL ERROR:', err);
+      alert('[approveStockOrder] FATAL: ' + err.message);
       setError(err.message);
       return false;
     }
