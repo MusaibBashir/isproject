@@ -164,21 +164,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!supabase) return { error: "Supabase not available" };
 
         try {
-            // 1. Create auth user with metadata
-            const { data: authData, error: authError } = await supabase.auth.admin
-                ? await (supabase as any).auth.admin.createUser({
-                    email,
-                    password,
-                    email_confirm: true,
-                    user_metadata: { role: "franchise", full_name: fullName },
-                })
-                : await supabase.auth.signUp({
-                    email,
-                    password,
-                    options: {
-                        data: { role: "franchise", full_name: fullName },
-                    },
-                });
+            // 1. Create auth user with metadata (uses signUp with anon key)
+            const { data: authData, error: authError } = await supabase.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: { role: "franchise", full_name: fullName },
+                },
+            });
 
             if (authError) return { error: authError.message };
             if (!authData.user) return { error: "Failed to create user" };
