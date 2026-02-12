@@ -55,10 +55,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .select("*")
                 .eq("id", userId)
                 .single();
-            if (error) throw error;
+            if (error) {
+                console.error("Profile fetch error:", error.message, "Code:", error.code, "Details:", error.details);
+                throw error;
+            }
+            console.log("Profile loaded:", data);
             return data as UserProfile;
-        } catch (err) {
-            console.error("Error fetching profile:", err);
+        } catch (err: any) {
+            console.error("Error fetching profile:", err?.message || err);
             return null;
         }
     }, []);
