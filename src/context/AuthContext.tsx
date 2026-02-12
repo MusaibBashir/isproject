@@ -53,16 +53,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!supabase) return null;
         try {
             console.log("[Auth] Fetching profile for:", userId);
+
             const { data, error } = await supabase
                 .from("profiles")
                 .select("*")
                 .eq("id", userId)
-                .single();
+                .maybeSingle();
 
             if (error) {
                 console.error("Profile fetch error detected:", error.message, "Code:", error.code);
-                // We return null here, but the caller will handle retries.
-                // If it persists, the caller sets the global authError.
                 return null;
             }
             console.log("[Auth] Profile found:", data?.role);
