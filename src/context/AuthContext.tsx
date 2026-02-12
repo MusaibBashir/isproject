@@ -90,48 +90,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
         }
 
-        // Get initial session
-        supabase.auth.getSession().then(async ({ data: { session } }) => {
-            try {
-                if (session?.user) {
-                    setUser(session.user);
-                    const prof = await fetchProfile(session.user.id);
-                    setProfile(prof);
-                    if (prof?.role === "franchise") {
-                        const fran = await fetchFranchise(session.user.id);
-                        setFranchise(fran);
-                    }
-                }
-            } catch (err) {
-                console.error("Error initializing auth:", err);
-            } finally {
-                setIsLoading(false);
-            }
-        }).catch((err) => {
-            console.error("Error getting session:", err);
-            setIsLoading(false);
-        });
+        let initialSessionHandled = false;
 
-        // Listen for auth changes
+        // Helper to process a session (shared by both paths)
+        const processSession = async (session: any) => {
+            if (session?.user) {
+                setUser(session.user);
+                const prof = await fetchProfile(session.user.id);
+                setProfile(prof);
+                if (prof?.role === "franchise") {
+                    const fran = await fetchFranchise(session.user.id);
+                    setFranchise(fran);
+                }
+            } else {
+                setUser(null);
+                setProfile(null);
+                setFranchise(null);
+            }
+        };
+
+        // Listen for auth changes — this is the primary handler
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (_event, session) => {
-                if (session?.user) {
-                    setUser(session.user);
-                    const prof = await fetchProfile(session.user.id);
-                    setProfile(prof);
-                    if (prof?.role === "franchise") {
-                        const fran = await fetchFranchise(session.user.id);
-                        setFranchise(fran);
-                    }
-                } else {
-                    setUser(null);
-                    setProfile(null);
-                    setFranchise(null);
+                try {
+                    initialSessionHandled = true;
+                    await processSession(session);
+                } catch (err) {
+                    console.error("Error in auth state change:", err);
+                } finally {
+                    setIsLoading(false);
                 }
             }
         );
 
-        return () => subscription.unsubscribe();
+        // Safety net: if onAuthStateChange doesn't fire within 2s, use getSession
+        const timeout = setTimeout(async () => {
+            if (!initialSessionHandled && supabase) {
+                try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    if (!initialSessionHandled) {
+                        await processSession(session);
+                    }
+                } catch (err) {
+                    console.error("Error getting session:", err);
+                } finally {
+                    setIsLoading(false);
+                }
+            }
+        }, 2000);
+
+        return () => {
+            clearTimeout(timeout);
+            subscription.unsubscribe();
+        };
     }, [fetchProfile, fetchFranchise]);
 
     const signIn = async (email: string, password: string) => {
