@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from "react";
 import { supabase, isSupabaseAvailable } from "../lib/supabaseClient";
 import { AuthContext } from "./AuthContext";
 
@@ -80,6 +80,10 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   // Get auth context for franchise filtering (returns undefined if AuthProvider not yet mounted)
   const authContext = useContext(AuthContext);
 
+  // Use a ref so fetchData always reads the LATEST auth values without needing them as deps
+  const authRef = useRef(authContext);
+  authRef.current = authContext;
+
   // Convert Supabase row to InventoryItem
   const mapInventoryRow = (row: any): InventoryItem => ({
     id: row.id,
@@ -118,9 +122,10 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     setError(null);
 
-    // Determine franchise filtering
-    const isAdmin = authContext?.profile?.role === 'admin';
-    const franchiseId = authContext?.franchise?.id;
+    // Read auth values from ref (always latest)
+    const auth = authRef.current;
+    const isAdmin = auth?.profile?.role === 'admin';
+    const franchiseId = auth?.franchise?.id;
 
     try {
       // Fetch inventory — franchise users only see their own
@@ -192,12 +197,14 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [authContext?.profile?.role, authContext?.franchise?.id]);
+  }, []); // Stable reference — reads auth from ref
 
-  // Initial data fetch
+  // Fetch data only AFTER auth is done loading
   useEffect(() => {
+    // Don't fetch until auth finishes loading
+    if (authContext?.isLoading) return;
     fetchData();
-  }, [fetchData]);
+  }, [authContext?.isLoading, authContext?.profile?.role, authContext?.franchise?.id, fetchData]);
 
   // Add inventory item
   const addInventoryItem = async (

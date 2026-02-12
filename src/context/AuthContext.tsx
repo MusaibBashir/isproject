@@ -90,57 +90,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
         }
 
-        let initialSessionHandled = false;
+        let isMounted = true;
 
-        // Helper to process a session (shared by both paths)
-        const processSession = async (session: any) => {
-            if (session?.user) {
-                setUser(session.user);
-                const prof = await fetchProfile(session.user.id);
-                setProfile(prof);
-                if (prof?.role === "franchise") {
-                    const fran = await fetchFranchise(session.user.id);
-                    setFranchise(fran);
-                }
-            } else {
-                setUser(null);
-                setProfile(null);
-                setFranchise(null);
+        // Helper to load profile + franchise
+        const loadUserData = async (authUser: any) => {
+            setUser(authUser);
+            const prof = await fetchProfile(authUser.id);
+            if (!isMounted) return;
+            setProfile(prof);
+            if (prof?.role === "franchise") {
+                const fran = await fetchFranchise(authUser.id);
+                if (!isMounted) return;
+                setFranchise(fran);
             }
         };
 
-        // Listen for auth changes — this is the primary handler
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            async (_event, session) => {
-                try {
-                    initialSessionHandled = true;
-                    await processSession(session);
-                } catch (err) {
-                    console.error("Error in auth state change:", err);
-                } finally {
+        // 1. Get initial session (reliable, always resolves)
+        const initAuth = async () => {
+            try {
+                console.log("[Auth] Getting session...");
+                const { data: { session } } = await supabase!.auth.getSession();
+                console.log("[Auth] Session:", session ? "found" : "none");
+                if (session?.user && isMounted) {
+                    await loadUserData(session.user);
+                    console.log("[Auth] User data loaded");
+                }
+            } catch (err) {
+                console.error("[Auth] Error initializing:", err);
+            } finally {
+                if (isMounted) {
+                    console.log("[Auth] Setting isLoading = false");
                     setIsLoading(false);
+                }
+            }
+        };
+        initAuth();
+
+        // 2. Listen for SUBSEQUENT auth changes only (sign in, sign out, token refresh)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+            async (event, session) => {
+                console.log("[Auth] onAuthStateChange event:", event);
+                // Skip initial session — already handled above
+                if (event === 'INITIAL_SESSION') return;
+
+                if (!isMounted) return;
+
+                if (session?.user) {
+                    await loadUserData(session.user);
+                } else {
+                    setUser(null);
+                    setProfile(null);
+                    setFranchise(null);
                 }
             }
         );
 
-        // Safety net: if onAuthStateChange doesn't fire within 2s, use getSession
-        const timeout = setTimeout(async () => {
-            if (!initialSessionHandled && supabase) {
-                try {
-                    const { data: { session } } = await supabase.auth.getSession();
-                    if (!initialSessionHandled) {
-                        await processSession(session);
-                    }
-                } catch (err) {
-                    console.error("Error getting session:", err);
-                } finally {
-                    setIsLoading(false);
-                }
+        // 3. Hard safety timeout — ALWAYS resolves loading after 5 seconds
+        const safetyTimeout = setTimeout(() => {
+            if (isMounted) {
+                console.warn("[Auth] Safety timeout triggered — forcing isLoading = false");
+                setIsLoading(false);
             }
-        }, 2000);
+        }, 5000);
 
         return () => {
-            clearTimeout(timeout);
+            isMounted = false;
+            clearTimeout(safetyTimeout);
             subscription.unsubscribe();
         };
     }, [fetchProfile, fetchFranchise]);
