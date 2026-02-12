@@ -7,6 +7,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { toast } from "sonner";
 import { useInventory } from "../context/InventoryContext";
+import { useAuth } from "../context/AuthContext";
 import { PageContainer } from "../components/layout/PageContainer";
 
 interface SaleItem {
@@ -20,6 +21,14 @@ interface SaleItem {
 
 export function SalesPage() {
     const { getInventoryBySku, recordSale, inventory, getCustomerByPhone } = useInventory();
+    const { profile, franchise } = useAuth();
+
+    // Franchise users: show only THEIR items. Admin: show all.
+    const myInventory = useMemo(() => {
+        if (profile?.role === "admin") return inventory;
+        if (!franchise?.id) return [];
+        return inventory.filter((item: any) => item.franchiseId === franchise.id);
+    }, [inventory, profile?.role, franchise?.id]);
     const [entryMode, setEntryMode] = useState<"barcode" | "manual">("manual");
     const [items, setItems] = useState<SaleItem[]>([]);
 
@@ -65,9 +74,9 @@ export function SalesPage() {
 
     // Fuzzy filtered inventory items
     const filteredInventory = useMemo(() => {
-        if (!searchQuery.trim()) return inventory;
+        if (!searchQuery.trim()) return myInventory;
         const query = searchQuery.toLowerCase();
-        return inventory
+        return myInventory
             .map((item: any) => {
                 const name = item.itemName.toLowerCase();
                 const sku = item.sku.toLowerCase();
@@ -88,7 +97,7 @@ export function SalesPage() {
             })
             .filter(Boolean)
             .sort((a: any, b: any) => a.score - b.score);
-    }, [searchQuery, inventory]);
+    }, [searchQuery, myInventory]);
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -190,7 +199,7 @@ export function SalesPage() {
         }
 
         // Find item by barcode
-        const inventoryItem = inventory.find((item) => item.barcode === barcode);
+        const inventoryItem = myInventory.find((item: any) => item.barcode === barcode);
 
         if (inventoryItem) {
             setSelectedSku(inventoryItem.sku);
