@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth, Franchise } from "../../context/AuthContext";
 import { useInventory } from "../../context/InventoryContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
@@ -80,9 +80,12 @@ export function AdminDashboard() {
         return { totalRevenue, totalSales, totalItems, totalStock, activeFranchises, topProducts, franchiseStats, regionStats };
     }, [salesHistory, inventory, franchises]);
 
+    const navigate = useNavigate();
+
     const handleSignOut = async () => {
         await signOut();
         toast.success("Signed out");
+        navigate("/login");
     };
 
     if (isLoading) {
@@ -207,9 +210,9 @@ export function AdminDashboard() {
                                         <div key={product.sku} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                                             <div className="flex items-center gap-3">
                                                 <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${index === 0 ? "bg-yellow-100 text-yellow-700" :
-                                                        index === 1 ? "bg-gray-200 text-gray-600" :
-                                                            index === 2 ? "bg-orange-100 text-orange-700" :
-                                                                "bg-gray-100 text-gray-500"
+                                                    index === 1 ? "bg-gray-200 text-gray-600" :
+                                                        index === 2 ? "bg-orange-100 text-orange-700" :
+                                                            "bg-gray-100 text-gray-500"
                                                     }`}>
                                                     {index + 1}
                                                 </span>

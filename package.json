@@ -1,6 +1,6 @@
 {
-      "name": "Analytics Dashboard with Cross-Filtering",
-      "version": "0.1.0",
+      "name": "IS Project Group10",
+      "version": "2.1.1",
       "private": true,
       "dependencies": {
             "@radix-ui/react-accordion": "^1.2.3",

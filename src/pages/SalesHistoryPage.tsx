@@ -2,11 +2,13 @@ import { IndianRupee, Calendar, User, Phone, Mail, Package } from "lucide-react"
 import { useInventory } from "../context/InventoryContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
-import { Separator } from "../components/ui/separator";
 import { PageContainer } from "../components/layout/PageContainer";
+import { printReceipt } from "../utils/printReceipt";
+import { useAuth } from "../context/AuthContext";
 
 export function SalesHistoryPage() {
     const { salesHistory } = useInventory();
+    const { franchise } = useAuth();
 
     const formatDate = (dateString: string) => {
         const date = new Date(dateString);
@@ -72,6 +74,22 @@ export function SalesHistoryPage() {
                                             </p>
                                         </div>
                                     </div>
+                                    {(sale.paymentMethod || sale.paymentDetails) && (
+                                        <div className="flex items-center gap-2">
+                                            <IndianRupee className="w-4 h-4 text-gray-500" />
+                                            <div>
+                                                <p className="text-xs text-gray-500">Payment</p>
+                                                <p className="text-sm font-medium text-gray-900 capitalize">
+                                                    {sale.paymentMethod || 'Cash'}
+                                                </p>
+                                                {sale.paymentMethod === 'split' && sale.paymentDetails && (
+                                                    <p className="text-xs text-gray-500">
+                                                        C:₹{sale.paymentDetails.cash || 0} U:₹{sale.paymentDetails.upi || 0}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                     {sale.customerPhone && (
                                         <div className="flex items-center gap-2">
                                             <Phone className="w-4 h-4 text-gray-500" />
@@ -99,9 +117,38 @@ export function SalesHistoryPage() {
                                 {/* Receipt - Items List */}
                                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                                     <div className="bg-gray-100 px-4 py-2 border-b border-gray-200">
-                                        <p className="text-sm font-semibold text-gray-900">
-                                            Receipt
-                                        </p>
+                                        <div className="flex justify-between items-center w-full">
+                                            <p className="text-sm font-semibold text-gray-900">
+                                                Receipt
+                                            </p>
+                                            <button
+                                                onClick={() => {
+                                                    printReceipt(
+                                                        {
+                                                            date: sale.date,
+                                                            customerName: sale.customerName,
+                                                            customerPhone: sale.customerPhone,
+                                                            customerEmail: sale.customerEmail,
+                                                            items: sale.items,
+                                                            subtotal: sale.subtotal,
+                                                            discountTotal: sale.discountTotal,
+                                                            taxRate: sale.taxRate,
+                                                            taxAmount: sale.taxAmount,
+                                                            total: sale.total,
+                                                            paymentMethod: sale.paymentMethod,
+                                                            paymentDetails: sale.paymentDetails,
+                                                        },
+                                                        {
+                                                            name: franchise?.name || "Inventory System",
+                                                            address: franchise?.region ? `${franchise.region}, ${franchise.state}` : "Demo Address",
+                                                        }
+                                                    );
+                                                }}
+                                                className="text-sm text-blue-600 hover:text-blue-800 font-medium px-3 py-1 bg-blue-50 rounded-md transition-colors"
+                                            >
+                                                Print Receipt
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="p-4">
                                         <table className="w-full">
@@ -138,22 +185,42 @@ export function SalesHistoryPage() {
                                                         </td>
                                                         <td className="py-2 text-sm text-gray-900 text-right">
                                                             {formatCurrency(item.price)}
+                                                            {item.discount ? (
+                                                                <div className="text-xs text-green-600">-₹{item.discount}</div>
+                                                            ) : null}
                                                         </td>
                                                         <td className="py-2 text-sm font-medium text-gray-900 text-right">
-                                                            {formatCurrency(item.price * item.quantity)}
+                                                            {formatCurrency((item.price * item.quantity) - (item.discount || 0))}
                                                         </td>
                                                     </tr>
                                                 ))}
                                             </tbody>
                                         </table>
-                                        <Separator className="my-3" />
-                                        <div className="flex justify-between items-center">
-                                            <p className="text-sm font-semibold text-gray-900">
-                                                Total
-                                            </p>
-                                            <p className="text-lg font-bold text-gray-900">
-                                                {formatCurrency(sale.total)}
-                                            </p>
+                                        <div className="space-y-1 mt-3">
+                                            <div className="flex justify-between items-center text-sm text-gray-600">
+                                                <p>Subtotal</p>
+                                                <p>{formatCurrency(sale.subtotal || sale.total)}</p>
+                                            </div>
+                                            {(sale.discountTotal || 0) > 0 && (
+                                                <div className="flex justify-between items-center text-sm text-green-600">
+                                                    <p>Discount</p>
+                                                    <p>-{formatCurrency(sale.discountTotal!)}</p>
+                                                </div>
+                                            )}
+                                            {(sale.taxAmount || 0) > 0 && (
+                                                <div className="flex justify-between items-center text-sm text-gray-600">
+                                                    <p>Tax ({sale.taxRate}%)</p>
+                                                    <p>+{formatCurrency(sale.taxAmount!)}</p>
+                                                </div>
+                                            )}
+                                            <div className="flex justify-between items-center pt-2 border-t border-gray-200 mt-2">
+                                                <p className="text-sm font-semibold text-gray-900">
+                                                    Total
+                                                </p>
+                                                <p className="text-lg font-bold text-gray-900">
+                                                    {formatCurrency(sale.total)}
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

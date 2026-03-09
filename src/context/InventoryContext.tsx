@@ -21,6 +21,9 @@ export interface SaleItem {
   itemName: string;
   quantity: number;
   price: number;
+  discount?: number;
+  discountType?: 'percent' | 'flat';
+  discountValue?: number;
 }
 
 export interface SaleRecord {
@@ -32,6 +35,12 @@ export interface SaleRecord {
   total: number;
   date: string;
   franchiseId?: string;
+  subtotal?: number;
+  discountTotal?: number;
+  taxRate?: number;
+  taxAmount?: number;
+  paymentMethod?: 'cash' | 'upi' | 'card' | 'split';
+  paymentDetails?: Record<string, number>;
 }
 
 export interface Customer {
@@ -203,11 +212,20 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         total: parseFloat(sale.total),
         date: sale.date,
         franchiseId: sale.franchise_id,
+        subtotal: sale.subtotal ? parseFloat(sale.subtotal) : undefined,
+        discountTotal: sale.discount_total ? parseFloat(sale.discount_total) : undefined,
+        taxRate: sale.tax_rate ? parseFloat(sale.tax_rate) : undefined,
+        taxAmount: sale.tax_amount ? parseFloat(sale.tax_amount) : undefined,
+        paymentMethod: sale.payment_method,
+        paymentDetails: sale.payment_details,
         items: (sale.sale_items || []).map((item: any) => ({
           sku: item.sku,
           itemName: item.item_name,
           quantity: item.quantity,
           price: parseFloat(item.price),
+          discount: item.discount ? parseFloat(item.discount) : undefined,
+          discountType: item.discount_type,
+          discountValue: item.discount_value ? parseFloat(item.discount_value) : undefined,
         })),
       }));
       setSalesHistory(mappedSales);
@@ -551,11 +569,17 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         sale.customerEmail
       );
 
-      // Insert sale with customer_id and franchise_id
+      // Insert sale with customer_id and franchise_id and new fields
       const saleInsert: any = {
         customer_id: customerId,
         customer_name: sale.customerName,
         total: sale.total,
+        subtotal: sale.subtotal,
+        discount_total: sale.discountTotal,
+        tax_rate: sale.taxRate,
+        tax_amount: sale.taxAmount,
+        payment_method: sale.paymentMethod || 'cash',
+        payment_details: sale.paymentDetails,
       };
       if (authContext?.franchise?.id) {
         saleInsert.franchise_id = authContext.franchise.id;
@@ -575,6 +599,9 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         item_name: item.itemName,
         quantity: item.quantity,
         price: item.price,
+        discount: item.discount,
+        discount_type: item.discountType,
+        discount_value: item.discountValue,
       }));
 
       const { error: itemsError } = await supabase
