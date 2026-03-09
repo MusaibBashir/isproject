@@ -34,7 +34,7 @@ import {
 } from "./pages";
 
 function RoleRedirect() {
-  const { user, profile, isLoading, error } = useAuth();
+  const { user, profile, isLoading, error, signOut } = useAuth();
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -63,7 +63,7 @@ function RoleRedirect() {
             {error && <p className="font-mono bg-gray-100 p-1 rounded">{error}</p>}
           </div>
           <button
-            onClick={() => { window.location.href = "/login"; }}
+            onClick={() => { signOut(); }}
             className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm hover:bg-gray-800"
           >
             Back to Login
@@ -111,6 +111,9 @@ export default function App() {
 
             {/* Old dashboard kept for admin analytics view */}
             <Route path="/analytics" element={<ProtectedRoute requiredRole="admin"><Dashboard /></ProtectedRoute>} />
+
+            {/* Catch-all: redirect unknown routes */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <Toaster />
         </BrowserRouter>

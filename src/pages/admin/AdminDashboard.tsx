@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useAuth, Franchise } from "../../context/AuthContext";
 import { useInventory } from "../../context/InventoryContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
@@ -80,12 +80,9 @@ export function AdminDashboard() {
         return { totalRevenue, totalSales, totalItems, totalStock, activeFranchises, topProducts, franchiseStats, regionStats };
     }, [salesHistory, inventory, franchises]);
 
-    const navigate = useNavigate();
-
     const handleSignOut = async () => {
         await signOut();
         toast.success("Signed out");
-        navigate("/login");
     };
 
     if (isLoading) {

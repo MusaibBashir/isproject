@@ -40,16 +40,14 @@ export function LoginPage() {
         }
     };
 
-    // If already authenticated, redirect to role-based dashboard
-    if (!isLoading && user) {
-        if (profile?.role === "admin") {
+    // If already authenticated with a valid profile, redirect to role-based dashboard
+    if (!isLoading && user && profile) {
+        if (profile.role === "admin") {
             return <Navigate to="/admin" replace />;
         }
-        if (profile?.role === "franchise") {
+        if (profile.role === "franchise") {
             return <Navigate to="/dashboard" replace />;
         }
-        // Profile exists but has unknown role, or profile missing — go to / which handles this
-        return <Navigate to="/" replace />;
     }
 
     if (isLoading) {

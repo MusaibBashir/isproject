@@ -88,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
-    // Initialize auth state — use onAuthStateChange as single source of truth
+    // Initialize auth state
     useEffect(() => {
         if (!supabase) {
             setIsLoading(false);
@@ -96,83 +96,94 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         let isMounted = true;
-        let isLoadingUserData = false;
+        let isFetching = false;
 
-        // Helper to load profile + franchise (with concurrency guard and retry)
-        const loadUserData = async (authUser: any) => {
-            if (isLoadingUserData) return; // prevent concurrent loads
-            isLoadingUserData = true;
+        const loadProfileData = async (userId: string) => {
+            if (isFetching || !isMounted || !supabase) return;
+            isFetching = true;
             try {
-                setUser(authUser);
-                let prof = await fetchProfile(authUser.id);
+                // Fetch profile
+                const { data: prof, error: profErr } = await supabase
+                    .from("profiles")
+                    .select("*")
+                    .eq("id", userId)
+                    .maybeSingle();
+
                 if (!isMounted) return;
 
-                // Retry once if profile fetch failed (transient RLS / timing issue)
-                if (!prof) {
-                    console.warn("[Auth] Profile fetch returned null, retrying in 500ms...");
-                    await new Promise(r => setTimeout(r, 500));
-                    if (!isMounted) return;
-                    prof = await fetchProfile(authUser.id);
-                    if (!isMounted) return;
-                }
-
-                if (!prof) {
-                    console.error("[Auth] Profile fetch failed after retry.");
+                if (profErr || !prof) {
+                    console.error("[Auth] Profile fetch failed:", profErr);
                     setAuthError("Failed to load user profile. If you just signed up, please wait or contact admin.");
-                    // We do NOT set profile to null here if we want to distinguish "loading" from "missing"
-                    // But currently profile is null.
+                    setProfile(null);
+                    setFranchise(null);
                 } else {
                     setAuthError(null);
-                    setProfile(prof);
+                    setProfile(prof as UserProfile);
+
+                    // Fetch franchise if role requires it
                     if (prof.role === "franchise") {
-                        const fran = await fetchFranchise(authUser.id);
-                        if (!isMounted) return;
-                        setFranchise(fran);
+                        const { data: fran, error: franErr } = await supabase
+                            .from("franchises")
+                            .select("*")
+                            .eq("owner_id", userId)
+                            .eq("is_active", true)
+                            .maybeSingle();
+                        if (isMounted && !franErr) {
+                            setFranchise(fran as Franchise);
+                        }
                     }
                 }
+            } catch (err) {
+                console.error("[Auth] Unexpected error fetching data:", err);
             } finally {
-                isLoadingUserData = false;
+                isFetching = false;
+                if (isMounted) setIsLoading(false);
             }
         };
 
-        // Single listener handles ALL auth events including initial session restoration
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            async (event, session) => {
-                console.log("[Auth] onAuthStateChange event:", event);
-                if (!isMounted) return;
-
-                if (session?.user) {
-                    // Only load data if we typically shouldn't have it yet or if forced
-                    await loadUserData(session.user);
-                } else {
-                    setUser(null);
-                    setProfile(null);
-                    setFranchise(null);
-                    setAuthError(null);
-                }
-
-                // After handling the initial session (or lack thereof), stop loading
-                if (event === 'INITIAL_SESSION') {
-                    console.log("[Auth] Initial session processed, setting isLoading = false");
-                    setIsLoading(false);
-                }
-            }
-        );
-
-        // Hard safety timeout — ALWAYS resolves loading after 8 seconds
-        const safetyTimeout = setTimeout(() => {
-            if (isMounted) {
-                console.warn("[Auth] Safety timeout triggered — forcing isLoading = false");
+        const handleAuthSession = (session: any) => {
+            if (session?.user) {
+                setUser(session.user);
+                loadProfileData(session.user.id);
+            } else {
+                setUser(null);
+                setProfile(null);
+                setFranchise(null);
                 setIsLoading(false);
             }
-        }, 8000);
+        };
+
+        // 1. Initial State Check
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (isMounted) {
+                handleAuthSession(session);
+            }
+        });
+
+        // 2. Auth State Listener
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            console.log("[Auth] onAuthStateChange event:", event);
+            if (!isMounted) return;
+
+            // We handle the initial state manually above
+            if (event === 'INITIAL_SESSION') return;
+
+            if (event === 'SIGNED_IN') {
+                setIsLoading(true);
+                handleAuthSession(session);
+            } else if (event === 'SIGNED_OUT') {
+                setUser(null);
+                setProfile(null);
+                setFranchise(null);
+                setIsLoading(false);
+            }
+        });
 
         return () => {
             isMounted = false;
-            clearTimeout(safetyTimeout);
             subscription.unsubscribe();
         };
-    }, [fetchProfile, fetchFranchise]);
+    }, []);
 
     const signIn = async (email: string, password: string) => {
         if (!supabase) return { error: "Supabase not available" };
@@ -187,12 +198,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const signOut = async () => {
-        if (!supabase) return;
-        await supabase.auth.signOut();
+        try {
+            console.log("[Auth] Signing out...");
+            if (supabase) {
+                await supabase.auth.signOut();
+            }
+        } catch (err) {
+            console.error("[Auth] signOut error (non-fatal):", err);
+        }
+        // Always clear local state regardless of Supabase response
         setUser(null);
         setProfile(null);
         setFranchise(null);
         setAuthError(null);
+        console.log("[Auth] Local state cleared, redirecting to /login");
+        // Force hard navigation to guarantee we reach login page
+        window.location.href = "/login";
     };
 
     const createFranchiseUser = async (
