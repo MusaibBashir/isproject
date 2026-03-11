@@ -1,10 +1,12 @@
 import { useState, useMemo } from "react";
-import { Package, IndianRupee, AlertTriangle, Search } from "lucide-react";
+import { Package, IndianRupee, AlertTriangle, Search, Camera, Printer } from "lucide-react";
 import { Input } from "../components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { useInventory } from "../context/InventoryContext";
+import { useInventory, InventoryItem } from "../context/InventoryContext"; // Updated to import InventoryItem
 import { useAuth } from "../context/AuthContext";
 import { PageContainer } from "../components/layout/PageContainer";
+import { CameraScanner } from "../components/CameraScanner";
+import { printBarcode } from "../utils/printBarcode";
 
 export function InventoryPage() {
     const { inventory } = useInventory();
@@ -12,6 +14,15 @@ export function InventoryPage() {
 
     const [searchQuery, setSearchQuery] = useState("");
     const [filterCategory, setFilterCategory] = useState<string>("all");
+    const [isScanning, setIsScanning] = useState(false);
+
+    const handlePrintBarcode = (item: InventoryItem) => {
+        const qtyStr = window.prompt("How many barcode labels to print?", "1");
+        if (!qtyStr) return; // cancelled
+        const qty = parseInt(qtyStr, 10);
+        if (isNaN(qty) || qty <= 0) return;
+        printBarcode(item, qty);
+    };
 
     // Franchise users: show only THEIR items. Admin: show all.
     const myInventory = useMemo(() => {
@@ -153,14 +164,23 @@ export function InventoryPage() {
 
             {/* Filters and Search */}
             <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1 relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <Input
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search by name, SKU, or barcode..."
-                        className="pl-9"
-                    />
+                <div className="flex-1 relative flex gap-2">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <Input
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Search by name, SKU, or barcode..."
+                            className="pl-9"
+                        />
+                    </div>
+                    <button
+                        onClick={() => setIsScanning(true)}
+                        className="px-3 py-2 border border-gray-300 rounded-lg text-gray-600 hover:text-gray-900 bg-white hover:bg-gray-50 flex items-center justify-center transition-colors"
+                        title="Scan Barcode"
+                    >
+                        <Camera className="w-5 h-5" />
+                    </button>
                 </div>
                 <select
                     value={filterCategory}
@@ -201,6 +221,7 @@ export function InventoryPage() {
                                         Value
                                     </th>
                                     <th className="pb-3 text-sm font-semibold text-gray-900">Status</th>
+                                    <th className="pb-3 text-sm font-semibold text-gray-900 text-center">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -245,6 +266,15 @@ export function InventoryPage() {
                                                         {status.label}
                                                     </span>
                                                 </td>
+                                                <td className="py-4 text-center">
+                                                    <button
+                                                        onClick={() => handlePrintBarcode(item)}
+                                                        className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors inline-block"
+                                                        title="Print Barcode"
+                                                    >
+                                                        <Printer className="w-4 h-4" />
+                                                    </button>
+                                                </td>
                                             </tr>
                                         );
                                     })
@@ -254,6 +284,15 @@ export function InventoryPage() {
                     </div>
                 </CardContent>
             </Card>
+
+            {isScanning && (
+                <CameraScanner
+                    onScan={(decodedText) => {
+                        setSearchQuery(decodedText);
+                    }}
+                    onClose={() => setIsScanning(false)}
+                />
+            )}
         </PageContainer>
     );
 }

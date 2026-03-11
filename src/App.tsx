@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { BrowserRouter, Routes, Route, Link, Navigate, useOutletContext } from "react-router-dom";
+import { HashRouter, Routes, Route, Link, Navigate, useOutletContext } from "react-router-dom";
 import { DashboardFilters, FilterState } from "./components/DashboardFilters";
 import { SalesTrendChart } from "./components/SalesTrendChart";
 import { RevenueBreakdownChart } from "./components/RevenueBreakdownChart";
@@ -81,7 +81,7 @@ export default function App() {
   return (
     <AuthProvider>
       <InventoryProvider>
-        <BrowserRouter>
+        <HashRouter>
           <Routes>
             {/* Auth */}
             <Route path="/login" element={<LoginPage />} />
@@ -116,7 +116,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <Toaster />
-        </BrowserRouter>
+        </HashRouter>
       </InventoryProvider>
     </AuthProvider>
   );

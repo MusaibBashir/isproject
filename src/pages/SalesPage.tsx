@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Scan, Keyboard, Plus, Trash2, IndianRupee, Search, CreditCard, Banknote, Smartphone, RefreshCw, PauseCircle, PlayCircle, Printer } from "lucide-react";
+import { Scan, Keyboard, Plus, Trash2, IndianRupee, Search, CreditCard, Banknote, Smartphone, RefreshCw, PauseCircle, PlayCircle, Printer, Camera, Star } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -10,6 +10,7 @@ import { useInventory } from "../context/InventoryContext";
 import { useAuth } from "../context/AuthContext";
 import { PageContainer } from "../components/layout/PageContainer";
 import { printReceipt } from "../utils/printReceipt";
+import { CameraScanner } from "../components/CameraScanner";
 
 interface SaleItem {
     id: string;
@@ -59,6 +60,10 @@ export function SalesPage() {
     const [cartDiscountValue, setCartDiscountValue] = useState(0);
     const [taxRate, setTaxRate] = useState(0);
 
+    // Points State
+    const [customerPointsBalance, setCustomerPointsBalance] = useState(0);
+    const [pointsToUse, setPointsToUse] = useState(0);
+
     // Dynamic Computations
     const subtotal = useMemo(() => {
         return items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -81,10 +86,18 @@ export function SalesPage() {
 
     const taxableAmount = Math.max(0, subtotal - totalDiscount);
     const taxAmount = taxableAmount * (taxRate / 100);
-    const grandTotal = taxableAmount + taxAmount;
+    const totalBeforePoints = taxableAmount + taxAmount;
+
+    // Points logic: 1 point = 1 rupee. Cannot use more points than balance or grand total.
+    const maxPointsUsable = Math.min(customerPointsBalance, Math.floor(totalBeforePoints));
+    const actualPointsUsed = Math.min(pointsToUse, maxPointsUsable);
+    const grandTotal = totalBeforePoints - actualPointsUsed;
 
     // Held Sale State
     const [hasHeldSale, setHasHeldSale] = useState(false);
+
+    // Camera Scanner State
+    const [isScanning, setIsScanning] = useState(false);
 
     useEffect(() => {
         // Check if there's a held sale on mount
@@ -215,7 +228,10 @@ export function SalesPage() {
                 if (customer) {
                     setCustomerName(customer.name);
                     setCustomerEmail(customer.email || "");
+                    setCustomerPointsBalance(customer.pointsBalance || 0);
                     toast.success(`Customer found: ${customer.name}`);
+                } else {
+                    setCustomerPointsBalance(0);
                 }
             } catch (err) {
                 console.error('Error looking up customer:', err);
@@ -339,19 +355,21 @@ export function SalesPage() {
         }));
     };
 
-    const handleScanBarcode = () => {
-        if (!barcode.trim()) {
+    const handleScanBarcode = (scannedBarcode?: string) => {
+        const barcodeToLookup = scannedBarcode || barcode;
+        if (!barcodeToLookup.trim()) {
             toast.error("Please enter a barcode");
             return;
         }
 
         // Find item by barcode
-        const inventoryItem = myInventory.find((item: any) => item.barcode === barcode);
+        const inventoryItem = myInventory.find((item: any) => item.barcode === barcodeToLookup);
 
         if (inventoryItem) {
             setSelectedSku(inventoryItem.sku);
             setItemName(inventoryItem.itemName);
             setPrice(inventoryItem.price);
+            setBarcode(barcodeToLookup);
             toast.success(`Found: ${inventoryItem.itemName}`);
         } else {
             toast.error("Barcode not found in inventory");
@@ -398,6 +416,7 @@ export function SalesPage() {
             taxAmount,
             paymentMethod,
             paymentDetails: paymentMethod === 'split' ? paymentDetails : undefined,
+            pointsUsed: actualPointsUsed
         });
 
         if (success) {
@@ -444,9 +463,11 @@ export function SalesPage() {
         setAdditionalNotes("");
         setCartDiscountType('flat');
         setCartDiscountValue(0);
-        setTaxRate(0);
+        // setTaxRate(0); // Keeping tax rate context
         setPaymentMethod('cash');
         setPaymentDetails({ cash: 0, upi: 0, card: 0 });
+        setCustomerPointsBalance(0);
+        setPointsToUse(0);
     };
 
     const handleHoldSale = () => {
@@ -539,24 +560,57 @@ export function SalesPage() {
 
                             {/* Barcode Scanner */}
                             {entryMode === "barcode" && (
-                                <div className="space-y-2">
-                                    <Label htmlFor="barcode">Barcode</Label>
-                                    <div className="flex gap-2">
-                                        <Input
-                                            id="barcode"
-                                            value={barcode}
-                                            onChange={(e) => setBarcode(e.target.value)}
-                                            placeholder="Scan or enter barcode"
-                                            className="flex-1"
-                                        />
-                                        <Button
-                                            onClick={handleScanBarcode}
-                                            variant="outline"
-                                            className="px-3"
-                                        >
-                                            <Scan className="w-4 h-4" />
-                                        </Button>
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="barcode">Barcode</Label>
+                                        <div className="flex gap-2">
+                                            <Input
+                                                id="barcode"
+                                                value={barcode}
+                                                onChange={(e) => setBarcode(e.target.value)}
+                                                placeholder="Scan or enter barcode"
+                                                className="flex-1"
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        e.preventDefault();
+                                                        handleScanBarcode();
+                                                    }
+                                                }}
+                                            />
+                                            <Button
+                                                onClick={() => handleScanBarcode()}
+                                                variant="outline"
+                                                className="px-3"
+                                                title="Search Barcode"
+                                            >
+                                                <Scan className="w-4 h-4" />
+                                            </Button>
+                                        </div>
                                     </div>
+
+                                    <div className="relative flex items-center py-2">
+                                        <div className="flex-grow border-t border-gray-200"></div>
+                                        <span className="flex-shrink-0 mx-4 text-gray-400 text-xs">OR</span>
+                                        <div className="flex-grow border-t border-gray-200"></div>
+                                    </div>
+
+                                    <Button
+                                        onClick={() => setIsScanning(true)}
+                                        variant="outline"
+                                        className="w-full text-blue-600 border-blue-200 hover:bg-blue-50"
+                                    >
+                                        <Camera className="w-4 h-4 mr-2" />
+                                        Scan with Camera
+                                    </Button>
+
+                                    {isScanning && (
+                                        <CameraScanner
+                                            onScan={(decodedText) => {
+                                                handleScanBarcode(decodedText);
+                                            }}
+                                            onClose={() => setIsScanning(false)}
+                                        />
+                                    )}
                                 </div>
                             )}
 
@@ -935,12 +989,51 @@ export function SalesPage() {
                                     </div>
                                 )}
 
+                                {customerPointsBalance > 0 && (
+                                    <div className="pt-4 border-t border-gray-100">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <Label htmlFor="pointsUsed" className="flex items-center gap-2 text-indigo-700">
+                                                <Star className="w-4 h-4 fill-indigo-700" />
+                                                Use Points
+                                            </Label>
+                                            <span className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                                                Balance: {customerPointsBalance} pts
+                                            </span>
+                                        </div>
+                                        <div className="flex gap-2 items-center">
+                                            <Input
+                                                id="pointsUsed"
+                                                type="number"
+                                                min="0"
+                                                max={maxPointsUsable}
+                                                value={pointsToUse}
+                                                onChange={(e) => setPointsToUse(Math.min(parseInt(e.target.value) || 0, maxPointsUsable))}
+                                                className="w-24 border-indigo-200"
+                                            />
+                                            <span className="text-sm text-gray-500">
+                                                = -₹{actualPointsUsed.toFixed(2)}
+                                            </span>
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                className="ml-auto text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                                                onClick={() => setPointsToUse(maxPointsUsable)}
+                                            >
+                                                Use Max
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="border-t border-gray-300 pt-3">
                                     <div className="flex justify-between">
                                         <span className="font-semibold text-gray-900">Total</span>
-                                        <span className="text-2xl font-semibold text-gray-900">
-                                            ₹{grandTotal.toFixed(2)}
-                                        </span>
+                                        <div className="text-right">
+                                            <span className="text-2xl font-semibold text-gray-900 block">
+                                                ₹{grandTotal.toFixed(2)}
+                                            </span>
+                                            <span className="text-xs text-gray-500">Earns {Math.floor(grandTotal / 100)} Points</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

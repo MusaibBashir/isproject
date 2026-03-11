@@ -41,6 +41,8 @@ export interface SaleRecord {
   taxAmount?: number;
   paymentMethod?: 'cash' | 'upi' | 'card' | 'split';
   paymentDetails?: Record<string, number>;
+  pointsEarned?: number;
+  pointsUsed?: number;
 }
 
 export interface Customer {
@@ -48,6 +50,7 @@ export interface Customer {
   name: string;
   phone?: string;
   email?: string;
+  pointsBalance: number;
   createdAt: string;
 }
 
@@ -81,8 +84,8 @@ interface InventoryContextType {
   deleteInventoryItem: (id: string) => Promise<boolean>;
   getInventoryBySku: (sku: string) => InventoryItem | undefined;
   getCustomerByPhone: (phone: string) => Promise<Customer | null>;
-  recordSale: (sale: Omit<SaleRecord, "id" | "date">) => Promise<boolean>;
-  addCustomer: (customer: Omit<Customer, "id" | "createdAt">) => Promise<Customer | null>;
+  recordSale: (sale: Omit<SaleRecord, "id" | "date" | "pointsEarned">) => Promise<boolean>;
+  addCustomer: (customer: Omit<Customer, "id" | "createdAt" | "pointsBalance">) => Promise<Customer | null>;
   getTotalInventoryValue: () => number;
   getTotalInventoryCount: () => number;
   getLowStockItems: (threshold?: number) => InventoryItem[];
@@ -136,6 +139,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     name: row.name,
     phone: row.phone,
     email: row.email,
+    pointsBalance: row.points_balance || 0,
     createdAt: row.created_at,
   });
 
@@ -214,10 +218,11 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         franchiseId: sale.franchise_id,
         subtotal: sale.subtotal ? parseFloat(sale.subtotal) : undefined,
         discountTotal: sale.discount_total ? parseFloat(sale.discount_total) : undefined,
-        taxRate: sale.tax_rate ? parseFloat(sale.tax_rate) : undefined,
         taxAmount: sale.tax_amount ? parseFloat(sale.tax_amount) : undefined,
         paymentMethod: sale.payment_method,
         paymentDetails: sale.payment_details,
+        pointsEarned: sale.points_earned,
+        pointsUsed: sale.points_used,
         items: (sale.sale_items || []).map((item: any) => ({
           sku: item.sku,
           itemName: item.item_name,
@@ -468,6 +473,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         name: data.name,
         phone: data.phone,
         email: data.email,
+        pointsBalance: data.points_balance || 0,
         createdAt: data.created_at,
       };
     } catch (err) {
@@ -481,7 +487,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     customerName: string,
     customerPhone?: string,
     customerEmail?: string
-  ): Promise<string | null> => {
+  ): Promise<Customer | null> => {
     if (!isSupabaseAvailable() || !supabase) return null;
 
     try {
@@ -489,12 +495,12 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       if (customerPhone) {
         const { data: existingCustomer } = await supabase
           .from('customers')
-          .select('id')
+          .select('*')
           .eq('phone', customerPhone)
           .maybeSingle();
 
         if (existingCustomer) {
-          return existingCustomer.id;
+          return mapCustomerRow(existingCustomer);
         }
       }
 
@@ -506,7 +512,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
           phone: customerPhone || null,
           email: customerEmail || null,
         })
-        .select('id')
+        .select('*')
         .single();
 
       if (error) {
@@ -516,16 +522,10 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 
       // Add to local state
       if (newCustomer) {
-        setCustomers((prev: Customer[]) => [...prev, {
-          id: newCustomer.id,
-          name: customerName,
-          phone: customerPhone,
-          email: customerEmail,
-          createdAt: new Date().toISOString(),
-        }]);
+        setCustomers((prev: Customer[]) => [...prev, mapCustomerRow(newCustomer)]);
       }
 
-      return newCustomer?.id || null;
+      return newCustomer ? mapCustomerRow(newCustomer) : null;
     } catch (err) {
       console.error('Error finding/creating customer:', err);
       return null;
@@ -535,7 +535,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 
   // Record sale
   const recordSale = async (
-    sale: Omit<SaleRecord, "id" | "date">
+    sale: Omit<SaleRecord, "id" | "date" | "pointsEarned">
   ): Promise<boolean> => {
     // Check stock availability
     for (const saleItem of sale.items) {
@@ -546,12 +546,18 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    // Points logic
+    const spentAmount = sale.total;
+    const pointsEarned = Math.floor(spentAmount / 100); // 1 point per 100 spent
+    const pointsUsed = sale.pointsUsed || 0;
+
     if (!isSupabaseAvailable() || !supabase) {
       // Fallback: local state
       const newSale: SaleRecord = {
         ...sale,
         id: Date.now().toString(),
         date: new Date().toISOString(),
+        pointsEarned,
       };
       setSalesHistory((prev: SaleRecord[]) => [newSale, ...prev]);
       // Deduct inventory
@@ -563,11 +569,27 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 
     try {
       // Find or create customer
-      const customerId = await findOrCreateCustomer(
+      const customer = await findOrCreateCustomer(
         sale.customerName,
         sale.customerPhone,
         sale.customerEmail
       );
+
+      const customerId = customer?.id;
+
+      // Calculate new points balance
+      if (customerId) {
+        let newBalance = (customer.pointsBalance || 0) + pointsEarned - pointsUsed;
+        // Ensure balance doesn't go negative
+        if (newBalance < 0) newBalance = 0;
+
+        const { error: pointsError } = await supabase
+          .from('customers')
+          .update({ points_balance: newBalance })
+          .eq('id', customerId);
+
+        if (pointsError) console.error("Error updating customer points:", pointsError);
+      }
 
       // Insert sale with customer_id and franchise_id and new fields
       const saleInsert: any = {
@@ -580,6 +602,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         tax_amount: sale.taxAmount,
         payment_method: sale.paymentMethod || 'cash',
         payment_details: sale.paymentDetails,
+        points_earned: pointsEarned,
+        points_used: pointsUsed,
       };
       if (authContext?.franchise?.id) {
         saleInsert.franchise_id = authContext.franchise.id;
@@ -634,12 +658,13 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 
   // Add customer
   const addCustomer = async (
-    customer: Omit<Customer, "id" | "createdAt">
+    customer: Omit<Customer, "id" | "createdAt" | "pointsBalance">
   ): Promise<Customer | null> => {
     if (!isSupabaseAvailable() || !supabase) {
       const newCustomer: Customer = {
         ...customer,
         id: Date.now().toString(),
+        pointsBalance: 0,
         createdAt: new Date().toISOString(),
       };
       setCustomers((prev) => [...prev, newCustomer]);
