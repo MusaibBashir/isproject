@@ -23,6 +23,7 @@ interface ReceiptData {
     total: number;
     paymentMethod?: string;
     paymentDetails?: Record<string, number>;
+    transactionId?: string;
 }
 
 interface ShopDetails {
@@ -36,7 +37,7 @@ function fmt(amount: any): string {
     return isNaN(num) ? "0.00" : num.toFixed(2);
 }
 
-export function printReceipt(saleData: ReceiptData, shopDetails: ShopDetails) {
+export function printReceipt(saleData: ReceiptData, shopDetails: ShopDetails, printWindow?: Window | null) {
     const itemsHtml = (saleData.items || [])
         .map((item) => {
             const itemTotal = item.quantity * item.price;
@@ -58,6 +59,9 @@ export function printReceipt(saleData: ReceiptData, shopDetails: ShopDetails) {
         ? `
         <div style="margin-top:16px;padding-top:8px;border-top:1px dashed #aaa">
             <strong>Payment: ${saleData.paymentMethod.toUpperCase()}</strong>
+            ${saleData.transactionId
+            ? `<div style="font-size:11px;margin-top:4px">Txn ID: ${saleData.transactionId}</div>`
+            : ""}
             ${saleData.paymentMethod === "split" && saleData.paymentDetails
             ? `<div style="padding-left:16px;font-size:11px;margin-top:4px">
                     ${(saleData.paymentDetails.cash || 0) > 0 ? `<div>Cash: ₹${fmt(saleData.paymentDetails.cash)}</div>` : ""}
@@ -144,9 +148,9 @@ export function printReceipt(saleData: ReceiptData, shopDetails: ShopDetails) {
 </body>
 </html>`;
 
-    const printWindow = window.open("", "_blank");
-    if (printWindow) {
-        printWindow.document.write(html);
-        printWindow.document.close();
+    const targetWindow = printWindow || window.open("", "_blank");
+    if (targetWindow) {
+        targetWindow.document.write(html);
+        targetWindow.document.close();
     }
 }

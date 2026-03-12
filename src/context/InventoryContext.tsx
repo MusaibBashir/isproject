@@ -443,8 +443,16 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Get inventory by SKU
+  // Get inventory by SKU — franchise-aware: prefer the franchise's own row
   const getInventoryBySku = (sku: string): InventoryItem | undefined => {
+    const franchiseId = authRef.current?.franchise?.id;
+    if (franchiseId) {
+      const franchiseItem = inventory.find(
+        (item) => item.sku === sku && item.franchiseId === franchiseId
+      );
+      if (franchiseItem) return franchiseItem;
+    }
+    // Admin or fallback: return any matching row
     return inventory.find((item) => item.sku === sku);
   };
 
@@ -592,6 +600,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       }
 
       // Insert sale with customer_id and franchise_id and new fields
+      // Note: points_earned/points_used are tracked on the customers table (points_balance),
+      // not as columns on the sales table.
       const saleInsert: any = {
         customer_id: customerId,
         customer_name: sale.customerName,
@@ -602,8 +612,6 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         tax_amount: sale.taxAmount,
         payment_method: sale.paymentMethod || 'cash',
         payment_details: sale.paymentDetails,
-        points_earned: pointsEarned,
-        points_used: pointsUsed,
       };
       if (authContext?.franchise?.id) {
         saleInsert.franchise_id = authContext.franchise.id;
@@ -634,9 +642,18 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 
       if (itemsError) throw itemsError;
 
-      // Deduct inventory
+      // Deduct inventory — target the franchise's own row when applicable
       for (const saleItem of sale.items) {
-        const item = inventory.find((i: InventoryItem) => i.sku === saleItem.sku);
+        const franchiseId = authContext?.franchise?.id;
+        let item: InventoryItem | undefined;
+        if (franchiseId) {
+          item = inventory.find(
+            (i: InventoryItem) => i.sku === saleItem.sku && i.franchiseId === franchiseId
+          );
+        }
+        if (!item) {
+          item = inventory.find((i: InventoryItem) => i.sku === saleItem.sku);
+        }
         if (item) {
           await supabase
             .from('inventory')

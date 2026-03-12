@@ -11,14 +11,7 @@ import { useAuth } from "../context/AuthContext";
 import { PageContainer } from "../components/layout/PageContainer";
 import { printReceipt } from "../utils/printReceipt";
 import { CameraScanner } from "../components/CameraScanner";
-import { sha512 } from "js-sha512";
-
-// Extend Window interface for PayU Bolt
-declare global {
-    interface Window {
-        bolt: any;
-    }
-}
+import { useRazorpay } from "react-razorpay";
 
 interface SaleItem {
     id: string;
@@ -44,33 +37,8 @@ export function SalesPage() {
     }, [inventory, profile?.role, franchise?.id]);
     const [entryMode, setEntryMode] = useState<"barcode" | "manual">("manual");
     const [items, setItems] = useState<SaleItem[]>([]);
-
-    const payuKey = (import.meta as any).env.VITE_PAYU_KEY;
-    const payuSalt = (import.meta as any).env.VITE_PAYU_SALT;
-    const [isPayULoaded, setIsPayULoaded] = useState(false);
-
-    useEffect(() => {
-        const scriptId = 'bolt';
-        if (document.getElementById(scriptId)) {
-            setIsPayULoaded(true);
-            return;
-        }
-
-        const script = document.createElement('script');
-        script.id = scriptId;
-        script.src = "https://sboxcheckout-static.citruspay.com/bolt/run/bolt.min.js";
-        script.setAttribute("bolt-color", "#9333ea");
-        script.setAttribute("bolt-logo", "");
-        script.onload = () => {
-            setIsPayULoaded(true);
-        };
-        document.body.appendChild(script);
-
-        return () => {
-            // Optional: remove script on unmount
-            // if (script.parentNode) script.parentNode.removeChild(script);
-        };
-    }, []);
+    const { Razorpay } = useRazorpay();
+    const razorpayKey = (import.meta as any).env.VITE_RAZORPAY_KEY_ID;
 
     // Form fields
     const [selectedSku, setSelectedSku] = useState("");
@@ -430,7 +398,7 @@ export function SalesPage() {
             }
         }
 
-        const processSale = async () => {
+        const processSale = async (transactionId?: string, printWindow?: Window | null) => {
             // Record the sale and update inventory
             const success = await recordSale({
                 items: items.map(item => ({
@@ -476,11 +444,13 @@ export function SalesPage() {
                         total: grandTotal,
                         paymentMethod,
                         paymentDetails: paymentMethod === 'split' ? paymentDetails : undefined,
+                        transactionId,
                     },
                     {
                         name: franchise?.name || "Mercanta",
                         address: franchise?.region ? `${franchise.region}, ${franchise.state}` : "Demo Address",
-                    }
+                    },
+                    printWindow
                 );
 
                 // Reset form
@@ -492,54 +462,52 @@ export function SalesPage() {
         };
 
         if (paymentMethod === 'card' || paymentMethod === 'upi') {
-            if (!payuKey || !payuSalt) {
-                toast.error("PayU Sandbox Key or Salt is missing in .env configurations.");
+            if (!razorpayKey) {
+                toast.error("Razorpay Sandbox Key is missing in .env configurations.");
                 return;
             }
 
-            if (!isPayULoaded || !window.bolt || typeof window.bolt.launch !== 'function') {
-                toast.error("PayU SDK is still loading or failed to load. Please wait a moment and try again.");
-                return;
+            // Open window synchronously to bypass popup blocker
+            const printTarget = window.open("", "_blank");
+            if (printTarget) {
+                printTarget.document.write("<html><head><title>Processing Payment...</title></head><body style='font-family:sans-serif;padding:2rem;text-align:center;'><h2>Processing Payment...</h2><p>Please complete the payment in the Razorpay popup.<br>This window will update with your receipt automatically.</p></body></html>");
             }
 
-            const txnid = `TXN_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-            const amount = grandTotal.toFixed(2);
-            const productinfo = "Store Purchase";
-            const firstname = customerName || "Customer";
-            const email = customerEmail || "test@example.com";
-            const phone = customerPhone || "9999999999";
-
-            // Hash formula: key|txnid|amount|productinfo|firstname|email|||||||||||salt
-            const hashString = `${payuKey}|${txnid}|${amount}|${productinfo}|${firstname}|${email}|||||||||||${payuSalt}`;
-            const hash = sha512(hashString);
-
-            window.bolt.launch({
-                key: payuKey,
-                txnid: txnid,
-                hash: hash,
-                amount: amount,
-                firstname: firstname,
-                email: email,
-                phone: phone,
-                productinfo: productinfo,
-                surl: "https://example.com/success", // Placeholder, handled by callback
-                furl: "https://example.com/fail", // Placeholder
-                mode: 'dropout' // Ensures we stay on the same page (overlay)
-            }, {
-                responseHandler: function (BOLT: any) {
-                    if (BOLT.response.txnStatus === "SUCCESS") {
-                        toast.success(`Payment verified! Txn ID: ${BOLT.response.txnid}`);
-                        processSale();
-                    } else if (BOLT.response.txnStatus === "CANCEL") {
-                        toast.error("Payment cancelled by user.");
-                    } else {
-                        toast.error(`Payment Failed: ${BOLT.response.error_Message || "Unknown error"}`);
+            const options = {
+                key: razorpayKey,
+                amount: Math.round(grandTotal * 100).toString(),
+                currency: "INR",
+                name: franchise?.name || "Mercanta Store",
+                description: `Purchase Payment`,
+                handler: async function (response: any) {
+                    toast.success(`Payment verified! Txn ID: ${response.razorpay_payment_id}`);
+                    await processSale(response.razorpay_payment_id, printTarget);
+                },
+                modal: {
+                    ondismiss: function () {
+                        if (printTarget && !printTarget.closed) {
+                            printTarget.close();
+                        }
                     }
                 },
-                catchException: function (BOLT: any) {
-                    toast.error(`Payment Exception: ${BOLT.message || "Failed to launch PayU"}`);
+                prefill: {
+                    name: customerName,
+                    email: customerEmail,
+                    contact: customerPhone,
+                },
+                theme: {
+                    color: "#9333ea", // purple-600
+                },
+            };
+
+            const rzp = new Razorpay(options as any);
+            rzp.on("payment.failed", function (response: any) {
+                toast.error(`Payment Failed: ${response.error.description || "Unknown error"}`);
+                if (printTarget && !printTarget.closed) {
+                    printTarget.close();
                 }
             });
+            rzp.open();
         } else {
             // Process cash or split immediately
             await processSale();
