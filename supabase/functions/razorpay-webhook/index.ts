@@ -73,6 +73,49 @@ serve(async (req) => {
       // with the paymentID stored in the JSONB payment_details column or via transactionId
       console.log(`Processing payment: ${paymentId}`)
 
+      // 1. CAPTURE THE PAYMENT (Fixes the "Authorized" status on Razorpay Dashboard)
+      // If this is an authorized event and we have API keys configured, instruct Razorpay to capture the funds.
+      if (event.event === 'payment.authorized') {
+        const rzpKeyId = Deno.env.get('RAZORPAY_KEY_ID')
+        const rzpKeySecret = Deno.env.get('RAZORPAY_KEY_SECRET')
+
+        if (rzpKeyId && rzpKeySecret) {
+          console.log(`Attempting to auto-capture payment ${paymentId} for amount ${payment.amount}...`)
+          try {
+            const authHeader = "Basic " + btoa(`${rzpKeyId}:${rzpKeySecret}`);
+            const captureRes = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}/capture`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': authHeader
+              },
+              body: JSON.stringify({
+                amount: payment.amount,
+                currency: payment.currency
+              })
+            })
+            
+            if (!captureRes.ok) {
+              console.error(`Razorpay capture API failed with status ${captureRes.status}`)
+              const errorText = await captureRes.text()
+              console.error(errorText)
+            } else {
+              console.log(`Successfully captured payment ${paymentId}`)
+            }
+          } catch (e) {
+            console.error(`Error during payment capture:`, e)
+          }
+        } else {
+          console.log(`Skipping auto-capture: RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET missing from environment.`)
+        }
+      }
+
+      // 2. FIX RACE CONDITION
+      // The webhook fires in ~26ms, but the frontend React app might take ~500ms to finish
+      // recording the sale in the Supabase DB.
+      console.log(`Waiting 3 seconds to allow frontend to insert the sale record...`)
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
       // Update the sale to specifically mark this payment as verified by webhook
       // First find the sale that has this payment ID inside its payment_details JSONB
       // Assuming frontend stores `{ "method": amount, "razorpay_payment_id": "pay_xyz" }`
