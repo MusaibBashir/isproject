@@ -42,6 +42,7 @@ const tooltipStyle = {
     boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
     padding: "10px 14px",
     fontSize: 12,
+    color: "#1f2937", // Explicitly setting color to fix white text issue
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -126,18 +127,20 @@ export function FranchiseDashboard() {
 
     return (
         <div className="min-h-screen bg-[#f8f9fb] font-inter pb-12">
-            <div className="w-full max-w-[1500px] mx-auto p-6 space-y-6">
+            <div className="w-full max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
 
                 {/* ── Header ── */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <HamburgerMenu />
                         <div>
-                            <h1 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
-                                <Store className="w-6 h-6 text-emerald-600" />
-                                {franchise?.name || "My Franchise"}
+                            <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
+                                <Store className="w-8 h-8 text-emerald-600" />
+                                <span className="font-serif italic font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-md text-2xl tracking-wide select-none">Mercanta</span>
+                                <span className="text-gray-300 font-light hidden sm:inline">|</span>
+                                <span className="text-2xl hidden sm:inline">{franchise?.name || "My Franchise"}</span>
                             </h1>
-                            <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-1.5">
+                            <p className="text-sm text-gray-500 mt-1 font-medium flex items-center gap-1.5">
                                 <MapPin className="w-3.5 h-3.5" />
                                 {franchise?.region}, {franchise?.state} · Logged in as {profile?.full_name}
                             </p>
@@ -185,9 +188,9 @@ export function FranchiseDashboard() {
                         <CardContent className="p-5">
                             <div className="flex items-start justify-between">
                                 <div>
-                                    <p className="text-[11px] font-medium text-gray-300 uppercase tracking-wider">Today's Revenue</p>
-                                    <p className="text-2xl font-bold mt-1">₹{analytics.todayRevenue.toFixed(0)}</p>
-                                    <p className="text-xs mt-1 font-medium text-emerald-400">{analytics.todaySales.length} sales today</p>
+                                    <p className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Today's Revenue</p>
+                                    <p className="text-3xl font-bold mt-1">₹{analytics.todayRevenue.toFixed(0)}</p>
+                                    <p className="text-sm mt-1.5 font-medium text-emerald-400">{analytics.todaySales.length} sales today</p>
                                 </div>
                                 <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/10">
                                     <TrendingUp className="w-4 h-4 text-white" />
@@ -205,9 +208,9 @@ export function FranchiseDashboard() {
                             <CardContent className="p-5">
                                 <div className="flex items-start justify-between">
                                     <div>
-                                        <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">{kpi.label}</p>
-                                        <p className="text-2xl font-bold text-gray-900 mt-1">{kpi.value}</p>
-                                        <p className={`text-xs mt-1 font-medium ${kpi.positive ? "text-gray-500" : "text-red-500"}`}>{kpi.sub}</p>
+                                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{kpi.label}</p>
+                                        <p className="text-3xl font-bold text-gray-900 mt-1">{kpi.value}</p>
+                                        <p className={`text-sm mt-1.5 font-medium ${kpi.positive ? "text-gray-500" : "text-red-500"}`}>{kpi.sub}</p>
                                     </div>
                                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${kpi.accent}`}>
                                         <kpi.icon className="w-4 h-4" />

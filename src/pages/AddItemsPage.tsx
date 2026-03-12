@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Scan, Package, Tag, Hash } from "lucide-react";
+import { useState, useRef } from "react";
+import { Scan, Package, Tag, Hash, Camera, X } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { toast } from "sonner";
 import { useInventory } from "../context/InventoryContext";
 import { PageContainer } from "../components/layout/PageContainer";
+import { CameraScanner } from "../components/CameraScanner";
 
 export function AddItemsPage() {
     const { addInventoryItem } = useInventory();
@@ -18,16 +19,21 @@ export function AddItemsPage() {
     const [quantity, setQuantity] = useState("");
     const [description, setDescription] = useState("");
     const [sku, setSku] = useState("");
+    
+    const [showScanner, setShowScanner] = useState(false);
+    const itemNameRef = useRef<HTMLInputElement>(null);
 
-    const handleScanBarcode = () => {
-        // Simulated barcode scan - in a real app, this would integrate with a barcode scanner
-        const mockBarcode = Math.floor(100000000000 + Math.random() * 900000000000).toString();
-        setBarcode(mockBarcode);
-
-        // Auto-generate SKU based on barcode
-        setSku("SKU-" + mockBarcode.slice(-6));
-
-        toast.success("Barcode scanned successfully");
+    const handleScanSuccess = (scannedBarcode: string) => {
+        setBarcode(scannedBarcode);
+        setShowScanner(false);
+        // Auto-generate SKU based on barcode if empty
+        if (!sku) {
+            setSku("SKU-" + scannedBarcode.slice(-6));
+        }
+        toast.success("Barcode scanned! Fill in the item details.");
+        
+        // Focus the name input automatically
+        setTimeout(() => itemNameRef.current?.focus(), 100);
     };
 
     const handleAddItem = async () => {
@@ -99,48 +105,70 @@ export function AddItemsPage() {
                 {/* Barcode Section */}
                 <Card className="border border-gray-200 bg-gradient-to-br from-blue-50 to-white">
                     <CardHeader>
-                        <CardTitle className="text-lg flex items-center gap-2">
-                            <Scan className="w-5 h-5 text-blue-600" />
-                            Barcode Scanner
+                        <CardTitle className="text-lg flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Scan className="w-5 h-5 text-blue-600" />
+                                Barcode Scanner
+                            </div>
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="barcode">Barcode</Label>
-                            <div className="flex gap-2">
-                                <Input
-                                    id="barcode"
-                                    value={barcode}
-                                    onChange={(e) => setBarcode(e.target.value)}
-                                    placeholder="Scan or enter barcode"
-                                    className="flex-1"
+                        {showScanner ? (
+                            <div className="border border-gray-200 rounded-lg overflow-hidden bg-black relative">
+                                <CameraScanner 
+                                    onScan={handleScanSuccess}
+                                    onClose={() => setShowScanner(false)}
                                 />
-                                <Button
-                                    onClick={handleScanBarcode}
-                                    className="bg-blue-600 hover:bg-blue-700 px-6"
-                                >
-                                    <Scan className="w-4 h-4 mr-2" />
-                                    Scan
-                                </Button>
                             </div>
-                            <p className="text-xs text-gray-500">
-                                Use a barcode scanner or click the scan button to simulate scanning
-                            </p>
-                        </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="barcode">Barcode</Label>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            id="barcode"
+                                            value={barcode}
+                                            onChange={(e) => setBarcode(e.target.value)}
+                                            placeholder="Scan or type barcode"
+                                            className="flex-1"
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    handleScanSuccess(barcode);
+                                                }
+                                            }}
+                                        />
+                                        <Button
+                                            onClick={() => setShowScanner(true)}
+                                            className="bg-blue-600 hover:bg-blue-700 px-6 gap-2"
+                                        >
+                                            <Camera className="w-4 h-4" />
+                                            Start Camera
+                                        </Button>
+                                    </div>
+                                    <p className="text-xs text-gray-500">
+                                        Use your device camera to scan, use a connected USB scanner, or type manually.
+                                    </p>
+                                </div>
 
-                        <div className="space-y-2">
-                            <Label htmlFor="sku">SKU (Stock Keeping Unit)</Label>
-                            <div className="relative">
-                                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                <Input
-                                    id="sku"
-                                    value={sku}
-                                    onChange={(e) => setSku(e.target.value)}
-                                    placeholder="Auto-generated or enter manually"
-                                    className="pl-9"
-                                />
+                                <div className="space-y-2">
+                                    <Label htmlFor="sku">SKU (Stock Keeping Unit)</Label>
+                                    <div className="relative">
+                                        <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                        <div className="relative">
+                                            <Input
+                                                id="sku"
+                                                value={sku}
+                                                onChange={(e) => setSku(e.target.value)}
+                                                placeholder="Auto-generated or enter manually"
+                                                className="pl-9"
+                                            />
+                                            {/* We need the absolute icon properly inside the relative container that holds Input, or absolute in the outer div. The structure before was: div.relative > Hash + Input.pl-9. We broke it in the edit so I'm fixing it: */}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </CardContent>
                 </Card>
 
