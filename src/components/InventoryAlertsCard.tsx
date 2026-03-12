@@ -4,9 +4,23 @@ import { Badge } from "./ui/badge";
 import { useInventory } from "../context/InventoryContext";
 
 export function InventoryAlertsCard() {
-  const { inventory, getLowStockItems } = useInventory();
-  
-  const lowStockItems = getLowStockItems(20);
+  const { inventory, salesHistory, getLowStockItems } = useInventory();
+
+  // Calculate sales frequency for each SKU
+  const salesCountMap: Record<string, number> = {};
+  salesHistory.forEach((sale) => {
+    sale.items.forEach((item) => {
+      salesCountMap[item.sku] = (salesCountMap[item.sku] || 0) + item.quantity;
+    });
+  });
+
+  // Find min and max sales frequency
+  const salesCounts = Object.values(salesCountMap);
+  const minSales = salesCounts.length > 0 ? Math.min(...salesCounts) : 0;
+  const maxSales = salesCounts.length > 0 ? Math.max(...salesCounts) : 0;
+
+  // Low stock threshold is dynamic based on sales frequency
+  const lowStockItems = getLowStockItems();
   const outOfStockItems = inventory.filter(item => item.quantity === 0);
   const criticalItems = inventory.filter(item => item.quantity > 0 && item.quantity <= 5);
 
@@ -47,66 +61,76 @@ export function InventoryAlertsCard() {
                 <p className="text-sm font-medium text-yellow-900">Low Stock</p>
               </div>
               <p className="text-2xl font-bold text-yellow-600">{lowStockItems.length}</p>
-              <p className="text-xs text-yellow-700 mt-1">≤20 units</p>
+              <p className="text-xs text-yellow-700 mt-1">Dynamic threshold by sales</p>
             </div>
           </div>
 
           {/* Items List */}
           <div className="mt-6">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Items Requiring Attention</h3>
-            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+            <div className="max-h-[300px] overflow-y-auto">
               {lowStockItems.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                   <p className="text-sm">All inventory levels are healthy</p>
                 </div>
               ) : (
-                lowStockItems
-                  .sort((a, b) => a.quantity - b.quantity)
-                  .map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-gray-900">{item.itemName}</p>
-                          {item.quantity === 0 && (
-                            <Badge variant="destructive" className="text-xs">
-                              Out of Stock
-                            </Badge>
-                          )}
-                          {item.quantity > 0 && item.quantity <= 5 && (
-                            <Badge className="bg-orange-500 hover:bg-orange-600 text-xs">
-                              Critical
-                            </Badge>
-                          )}
-                          {item.quantity > 5 && item.quantity <= 20 && (
-                            <Badge className="bg-yellow-500 hover:bg-yellow-600 text-xs">
-                              Low
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-600 mt-1">
-                          SKU: {item.sku} • {item.category}
-                        </p>
-                      </div>
-                      <div className="text-right ml-4">
-                        <p
-                          className={`text-lg font-bold ${
-                            item.quantity === 0
-                              ? "text-red-600"
-                              : item.quantity <= 5
-                              ? "text-orange-600"
-                              : "text-yellow-600"
-                          }`}
-                        >
-                          {item.quantity}
-                        </p>
-                        <p className="text-xs text-gray-500">units</p>
-                      </div>
-                    </div>
-                  ))
+                <table className="w-full text-left bg-gray-50 border border-gray-200 rounded-lg">
+                  <thead>
+                    <tr>
+                      <th className="px-3 py-2 text-xs font-semibold text-gray-700">Item</th>
+                      <th className="px-3 py-2 text-xs font-semibold text-gray-700">SKU</th>
+                      <th className="px-3 py-2 text-xs font-semibold text-gray-700">Category</th>
+                      <th className="px-3 py-2 text-xs font-semibold text-gray-700">Current Qty</th>
+                      <th className="px-3 py-2 text-xs font-semibold text-gray-700">Threshold</th>
+                      <th className="px-3 py-2 text-xs font-semibold text-gray-700">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lowStockItems
+                      .sort((a, b) => a.quantity - b.quantity)
+                      .map((item) => {
+                        const sales = salesCountMap[item.sku] || 0;
+                        let threshold = 20;
+                        if (maxSales !== minSales) {
+                          const minThreshold = 10;
+                          const maxThreshold = 40;
+                          threshold = Math.round(
+                            minThreshold + ((sales - minSales) / (maxSales - minSales)) * (maxThreshold - minThreshold)
+                          );
+                        }
+                        let status = "Low";
+                        if (item.quantity === 0) status = "Out of Stock";
+                        else if (item.quantity > 0 && item.quantity <= 5) status = "Critical";
+                        return (
+                          <tr key={item.id} className="border-b border-gray-200 last:border-none">
+                            <td className="px-3 py-2 font-medium text-gray-900">{item.itemName}</td>
+                            <td className="px-3 py-2 text-xs text-gray-600">{item.sku}</td>
+                            <td className="px-3 py-2 text-xs text-gray-600">{item.category}</td>
+                            <td className={`px-3 py-2 text-lg font-bold ${
+                              item.quantity === 0
+                                ? "text-red-600"
+                                : item.quantity <= 5
+                                ? "text-orange-600"
+                                : "text-yellow-600"
+                            }`}>{item.quantity}</td>
+                            <td className="px-3 py-2 text-xs text-blue-700 font-semibold">{threshold}</td>
+                            <td className="px-3 py-2">
+                              <Badge className={
+                                status === "Out of Stock"
+                                  ? "bg-red-500 hover:bg-red-600 text-xs"
+                                  : status === "Critical"
+                                  ? "bg-orange-500 hover:bg-orange-600 text-xs"
+                                  : "bg-yellow-500 hover:bg-yellow-600 text-xs"
+                              }>
+                                {status}
+                              </Badge>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
               )}
             </div>
           </div>

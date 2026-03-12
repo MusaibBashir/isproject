@@ -723,7 +723,34 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   };
 
   const getLowStockItems = (threshold: number = 20): InventoryItem[] => {
-    return inventory.filter((item) => item.quantity <= threshold);
+    // Calculate sales frequency for each SKU
+    const salesCountMap: Record<string, number> = {};
+    salesHistory.forEach((sale) => {
+      sale.items.forEach((item) => {
+        salesCountMap[item.sku] = (salesCountMap[item.sku] || 0) + item.quantity;
+      });
+    });
+
+    // Find min and max sales frequency
+    const salesCounts = Object.values(salesCountMap);
+    const minSales = salesCounts.length > 0 ? Math.min(...salesCounts) : 0;
+    const maxSales = salesCounts.length > 0 ? Math.max(...salesCounts) : 0;
+
+    // Dynamic threshold calculation
+    return inventory.filter((item) => {
+      const sales = salesCountMap[item.sku] || 0;
+      // If no sales data, use default threshold
+      if (maxSales === minSales) {
+        return item.quantity <= threshold;
+      }
+      // Map sales frequency to threshold range (e.g. 10-40 units)
+      const minThreshold = 10;
+      const maxThreshold = 40;
+      const dynamicThreshold = Math.round(
+        minThreshold + ((sales - minSales) / (maxSales - minSales)) * (maxThreshold - minThreshold)
+      );
+      return item.quantity <= dynamicThreshold;
+    });
   };
 
   const refreshData = async (): Promise<void> => {
@@ -913,6 +940,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  
   return (
     <InventoryContext.Provider
       value={{

@@ -211,15 +211,11 @@ export function InventoryPage() {
                                     <th className="pb-3 text-sm font-semibold text-gray-900">Item Name</th>
                                     <th className="pb-3 text-sm font-semibold text-gray-900">SKU</th>
                                     <th className="pb-3 text-sm font-semibold text-gray-900">Category</th>
-                                    <th className="pb-3 text-sm font-semibold text-gray-900 text-right">
-                                        Price
-                                    </th>
-                                    <th className="pb-3 text-sm font-semibold text-gray-900 text-right">
-                                        Quantity
-                                    </th>
-                                    <th className="pb-3 text-sm font-semibold text-gray-900 text-right">
-                                        Value
-                                    </th>
+                                    <th className="pb-3 text-sm font-semibold text-gray-900 text-right">Price</th>
+                                    <th className="pb-3 text-sm font-semibold text-gray-900 text-right">Quantity</th>
+                                    <th className="pb-3 text-sm font-semibold text-gray-900 text-right">Value</th>
+                                    <th className="pb-3 text-sm font-semibold text-gray-900 text-right">Threshold</th>
+                                    <th className="pb-3 w-8"></th>
                                     <th className="pb-3 text-sm font-semibold text-gray-900">Status</th>
                                     <th className="pb-3 text-sm font-semibold text-gray-900 text-center">Actions</th>
                                 </tr>
@@ -233,6 +229,26 @@ export function InventoryPage() {
                                     </tr>
                                 ) : (
                                     filteredInventory.map((item) => {
+                                        // Calculate sales frequency for each SKU
+                                        const { salesHistory } = useInventory();
+                                        const salesCountMap: Record<string, number> = {};
+                                        salesHistory.forEach((sale) => {
+                                          sale.items.forEach((saleItem) => {
+                                            salesCountMap[saleItem.sku] = (salesCountMap[saleItem.sku] || 0) + saleItem.quantity;
+                                          });
+                                        });
+                                        const sales = salesCountMap[item.sku] || 0;
+                                        const salesCounts = Object.values(salesCountMap);
+                                        const minSales = salesCounts.length > 0 ? Math.min(...salesCounts) : 0;
+                                        const maxSales = salesCounts.length > 0 ? Math.max(...salesCounts) : 0;
+                                        let threshold = 20;
+                                        if (maxSales !== minSales) {
+                                          const minThreshold = 10;
+                                          const maxThreshold = 40;
+                                          threshold = Math.round(
+                                            minThreshold + ((sales - minSales) / (maxSales - minSales)) * (maxThreshold - minThreshold)
+                                          );
+                                        }
                                         const status = getStockStatus(item.quantity);
                                         return (
                                             <tr key={item.id} className="border-b border-gray-100">
@@ -259,6 +275,10 @@ export function InventoryPage() {
                                                 <td className="py-4 text-sm text-gray-900 text-right">
                                                     ₹{(item.price * item.quantity).toFixed(2)}
                                                 </td>
+                                                <td className="py-4 text-sm text-blue-700 text-right font-semibold">
+                                                    {threshold}
+                                                </td>
+                                                <td className="py-4 w-8"></td>
                                                 <td className="py-4">
                                                     <span
                                                         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${status.color}`}
