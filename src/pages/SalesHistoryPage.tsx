@@ -139,7 +139,7 @@ export function SalesHistoryPage() {
                                                             paymentDetails: sale.paymentDetails,
                                                         },
                                                         {
-                                                            name: franchise?.name || "Inventory System",
+                                                            name: franchise?.name || "Mercanta",
                                                             address: franchise?.region ? `${franchise.region}, ${franchise.state}` : "Demo Address",
                                                         }
                                                     );

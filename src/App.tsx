@@ -203,7 +203,7 @@ function Dashboard() {
             </div>
             <div>
               <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">
-                IS Project
+                Mercanta
               </h1>
               <p className="text-gray-600 mt-1 text-sm">
                 Inventory & Sales Management System

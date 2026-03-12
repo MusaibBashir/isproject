@@ -11,6 +11,14 @@ import { useAuth } from "../context/AuthContext";
 import { PageContainer } from "../components/layout/PageContainer";
 import { printReceipt } from "../utils/printReceipt";
 import { CameraScanner } from "../components/CameraScanner";
+import { sha512 } from "js-sha512";
+
+// Extend Window interface for PayU Bolt
+declare global {
+    interface Window {
+        bolt: any;
+    }
+}
 
 interface SaleItem {
     id: string;
@@ -36,6 +44,33 @@ export function SalesPage() {
     }, [inventory, profile?.role, franchise?.id]);
     const [entryMode, setEntryMode] = useState<"barcode" | "manual">("manual");
     const [items, setItems] = useState<SaleItem[]>([]);
+
+    const payuKey = (import.meta as any).env.VITE_PAYU_KEY;
+    const payuSalt = (import.meta as any).env.VITE_PAYU_SALT;
+    const [isPayULoaded, setIsPayULoaded] = useState(false);
+
+    useEffect(() => {
+        const scriptId = 'bolt';
+        if (document.getElementById(scriptId)) {
+            setIsPayULoaded(true);
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.id = scriptId;
+        script.src = "https://sboxcheckout-static.citruspay.com/bolt/run/bolt.min.js";
+        script.setAttribute("bolt-color", "#9333ea");
+        script.setAttribute("bolt-logo", "");
+        script.onload = () => {
+            setIsPayULoaded(true);
+        };
+        document.body.appendChild(script);
+
+        return () => {
+            // Optional: remove script on unmount
+            // if (script.parentNode) script.parentNode.removeChild(script);
+        };
+    }, []);
 
     // Form fields
     const [selectedSku, setSelectedSku] = useState("");
@@ -395,63 +430,119 @@ export function SalesPage() {
             }
         }
 
-        // Record the sale and update inventory
-        const success = await recordSale({
-            items: items.map(item => ({
-                sku: item.sku,
-                itemName: item.name,
-                quantity: item.quantity,
-                price: item.price,
-                discount: item.discount,
-                discountType: item.discountType,
-                discountValue: item.discountValue,
-            })),
-            customerName,
-            customerPhone,
-            customerEmail,
-            total: grandTotal,
-            subtotal,
-            discountTotal: totalDiscount,
-            taxRate,
-            taxAmount,
-            paymentMethod,
-            paymentDetails: paymentMethod === 'split' ? paymentDetails : undefined,
-            pointsUsed: actualPointsUsed
-        });
+        const processSale = async () => {
+            // Record the sale and update inventory
+            const success = await recordSale({
+                items: items.map(item => ({
+                    sku: item.sku,
+                    itemName: item.name,
+                    quantity: item.quantity,
+                    price: item.price,
+                    discount: item.discount,
+                    discountType: item.discountType,
+                    discountValue: item.discountValue,
+                })),
+                customerName,
+                customerPhone,
+                customerEmail,
+                total: grandTotal,
+                subtotal,
+                discountTotal: totalDiscount,
+                taxRate,
+                taxAmount,
+                paymentMethod,
+                paymentDetails: paymentMethod === 'split' ? paymentDetails : undefined,
+                pointsUsed: actualPointsUsed
+            });
 
-        if (success) {
-            // Print receipt in a new window
-            printReceipt(
-                {
-                    date: new Date().toISOString(),
-                    customerName,
-                    customerPhone,
-                    customerEmail,
-                    items: items.map(item => ({
-                        itemName: item.name,
-                        quantity: item.quantity,
-                        price: item.price,
-                        discount: item.discount,
-                    })),
-                    subtotal,
-                    discountTotal: totalDiscount,
-                    taxRate,
-                    taxAmount,
-                    total: grandTotal,
-                    paymentMethod,
-                    paymentDetails: paymentMethod === 'split' ? paymentDetails : undefined,
+            if (success) {
+                // Print receipt in a new window
+                printReceipt(
+                    {
+                        date: new Date().toISOString(),
+                        customerName,
+                        customerPhone,
+                        customerEmail,
+                        items: items.map(item => ({
+                            itemName: item.name,
+                            quantity: item.quantity,
+                            price: item.price,
+                            discount: item.discount,
+                        })),
+                        subtotal,
+                        discountTotal: totalDiscount,
+                        taxRate,
+                        taxAmount,
+                        total: grandTotal,
+                        paymentMethod,
+                        paymentDetails: paymentMethod === 'split' ? paymentDetails : undefined,
+                    },
+                    {
+                        name: franchise?.name || "Mercanta",
+                        address: franchise?.region ? `${franchise.region}, ${franchise.state}` : "Demo Address",
+                    }
+                );
+
+                // Reset form
+                handleClearCart();
+                toast.success("Sale completed successfully!");
+            } else {
+                toast.error("Failed to complete sale. Please check stock levels.");
+            }
+        };
+
+        if (paymentMethod === 'card' || paymentMethod === 'upi') {
+            if (!payuKey || !payuSalt) {
+                toast.error("PayU Sandbox Key or Salt is missing in .env configurations.");
+                return;
+            }
+
+            if (!isPayULoaded || !window.bolt || typeof window.bolt.launch !== 'function') {
+                toast.error("PayU SDK is still loading or failed to load. Please wait a moment and try again.");
+                return;
+            }
+
+            const txnid = `TXN_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+            const amount = grandTotal.toFixed(2);
+            const productinfo = "Store Purchase";
+            const firstname = customerName || "Customer";
+            const email = customerEmail || "test@example.com";
+            const phone = customerPhone || "9999999999";
+
+            // Hash formula: key|txnid|amount|productinfo|firstname|email|||||||||||salt
+            const hashString = `${payuKey}|${txnid}|${amount}|${productinfo}|${firstname}|${email}|||||||||||${payuSalt}`;
+            const hash = sha512(hashString);
+
+            window.bolt.launch({
+                key: payuKey,
+                txnid: txnid,
+                hash: hash,
+                amount: amount,
+                firstname: firstname,
+                email: email,
+                phone: phone,
+                productinfo: productinfo,
+                surl: "https://example.com/success", // Placeholder, handled by callback
+                furl: "https://example.com/fail", // Placeholder
+                mode: 'dropout' // Ensures we stay on the same page (overlay)
+            }, {
+                responseHandler: function (BOLT: any) {
+                    if (BOLT.response.txnStatus === "SUCCESS") {
+                        toast.success(`Payment verified! Txn ID: ${BOLT.response.txnid}`);
+                        processSale();
+                    } else if (BOLT.response.txnStatus === "CANCEL") {
+                        toast.error("Payment cancelled by user.");
+                    } else {
+                        toast.error(`Payment Failed: ${BOLT.response.error_Message || "Unknown error"}`);
+                    }
                 },
-                {
-                    name: franchise?.name || "Inventory System",
-                    address: franchise?.region ? `${franchise.region}, ${franchise.state}` : "Demo Address",
+                catchException: function (BOLT: any) {
+                    toast.error(`Payment Exception: ${BOLT.message || "Failed to launch PayU"}`);
                 }
-            );
-
-            // Reset form
-            handleClearCart();
-            toast.success("Sale completed successfully!");
+            });
         } else {
-            toast.error("Failed to complete sale. Please check stock levels.");
+            // Process cash or split immediately
+            await processSale();
         }
     };
 

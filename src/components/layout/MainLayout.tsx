@@ -32,7 +32,7 @@ export function MainLayout({ viewMode, setViewMode }: MainLayoutProps) {
                         </div>
                         <div>
                             <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">
-                                IS Project
+                                Mercanta
                             </h1>
                             <p className="text-gray-600 mt-1 text-sm">
                                 Inventory & Sales Management System
@@ -45,8 +45,8 @@ export function MainLayout({ viewMode, setViewMode }: MainLayoutProps) {
                             <button
                                 onClick={() => setViewMode("admin")}
                                 className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 flex items-center gap-2 ${viewMode === "admin"
-                                        ? "bg-gray-900 text-white shadow-sm"
-                                        : "text-gray-600 hover:text-gray-900"
+                                    ? "bg-gray-900 text-white shadow-sm"
+                                    : "text-gray-600 hover:text-gray-900"
                                     }`}
                             >
                                 <Shield className="w-4 h-4" />
@@ -55,8 +55,8 @@ export function MainLayout({ viewMode, setViewMode }: MainLayoutProps) {
                             <button
                                 onClick={() => setViewMode("franchise")}
                                 className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 flex items-center gap-2 ${viewMode === "franchise"
-                                        ? "bg-gray-900 text-white shadow-sm"
-                                        : "text-gray-600 hover:text-gray-900"
+                                    ? "bg-gray-900 text-white shadow-sm"
+                                    : "text-gray-600 hover:text-gray-900"
                                     }`}
                             >
                                 <Store className="w-4 h-4" />
