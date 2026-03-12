@@ -3,23 +3,48 @@ import { useAuth, Franchise } from "../../context/AuthContext";
 import { useInventory, InventoryItem } from "../../context/InventoryContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { HamburgerMenu } from "../../components/HamburgerMenu";
-import {
-    Package, Warehouse, Store, Search, MapPin
-} from "lucide-react";
+import { CameraScanner } from "../../components/CameraScanner";
+import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
+import { toast } from "sonner";
+import {
+    Package, Warehouse, Store, Search, MapPin, Scan, Plus, Camera, X, RefreshCw
+} from "lucide-react";
 
 type ViewTab = "warehouse" | "all-franchises" | "per-franchise";
 
 export function AdminInventoryPage() {
     const { getAllFranchises } = useAuth();
-    const { inventory, getTotalInventoryValue, refreshData } = useInventory();
+    const { inventory, getTotalInventoryValue, refreshData, addInventoryItem, updateInventoryItem } = useInventory();
     const [franchises, setFranchises] = useState<Franchise[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<ViewTab>("warehouse");
     const [selectedFranchiseId, setSelectedFranchiseId] = useState<string>("");
     const [searchQuery, setSearchQuery] = useState("");
 
-    // Load franchises and refresh inventory on mount
+    // Add / Restock panel state
+    const [showAddPanel, setShowAddPanel] = useState(false);
+    const [isScanning, setIsScanning] = useState(false);
+    const [scannedBarcode, setScannedBarcode] = useState("");
+    const [manualBarcode, setManualBarcode] = useState("");
+    const [isSaving, setIsSaving] = useState(false);
+
+    // Form fields
+    const [form, setForm] = useState({
+        itemName: "",
+        sku: "",
+        barcode: "",
+        category: "",
+        price: "",
+        quantity: "",
+        description: "",
+    });
+
+    // Whether barcode matched an existing item (restock mode)
+    const [matchedItem, setMatchedItem] = useState<InventoryItem | null>(null);
+    const [restockQty, setRestockQty] = useState("");
+
     useEffect(() => {
         const load = async () => {
             await refreshData();
@@ -29,6 +54,83 @@ export function AdminInventoryPage() {
         };
         load();
     }, [getAllFranchises, refreshData]);
+
+    // Lookup barcode against existing warehouse inventory
+    const lookupBarcode = (barcode: string) => {
+        const existing = inventory.find(
+            (i: InventoryItem) => i.barcode === barcode && !i.franchiseId
+        );
+        if (existing) {
+            setMatchedItem(existing);
+            setRestockQty("1");
+            toast.success(`Found: ${existing.itemName} — enter qty to restock`);
+        } else {
+            setMatchedItem(null);
+            setForm(f => ({ ...f, barcode, sku: barcode, itemName: "", category: "", price: "", quantity: "1", description: "" }));
+            toast.info("New item — fill in the details to add to warehouse");
+        }
+    };
+
+    const handleScanResult = (code: string) => {
+        setScannedBarcode(code);
+        setManualBarcode(code);
+        lookupBarcode(code);
+        setIsScanning(false);
+    };
+
+    const handleManualLookup = () => {
+        if (!manualBarcode.trim()) return;
+        setScannedBarcode(manualBarcode.trim());
+        lookupBarcode(manualBarcode.trim());
+    };
+
+    const handleRestock = async () => {
+        if (!matchedItem || !restockQty) return;
+        const qty = parseInt(restockQty);
+        if (isNaN(qty) || qty <= 0) { toast.error("Enter a valid quantity"); return; }
+        setIsSaving(true);
+        const ok = await updateInventoryItem(matchedItem.id, { quantity: matchedItem.quantity + qty });
+        setIsSaving(false);
+        if (ok) {
+            toast.success(`Added ${qty} units to ${matchedItem.itemName}. New stock: ${matchedItem.quantity + qty}`);
+            resetPanel();
+        } else {
+            toast.error("Failed to update stock");
+        }
+    };
+
+    const handleAddNew = async () => {
+        if (!form.itemName || !form.sku || !form.price || !form.quantity) {
+            toast.error("Please fill in Name, SKU, Price and Quantity");
+            return;
+        }
+        setIsSaving(true);
+        const ok = await addInventoryItem({
+            itemName: form.itemName,
+            sku: form.sku,
+            barcode: form.barcode || undefined,
+            category: form.category || "General",
+            price: parseFloat(form.price),
+            quantity: parseInt(form.quantity),
+            description: form.description || undefined,
+        });
+        setIsSaving(false);
+        if (ok) {
+            toast.success(`${form.itemName} added to warehouse`);
+            resetPanel();
+        } else {
+            toast.error("Failed to add item");
+        }
+    };
+
+    const resetPanel = () => {
+        setShowAddPanel(false);
+        setScannedBarcode("");
+        setManualBarcode("");
+        setMatchedItem(null);
+        setRestockQty("");
+        setForm({ itemName: "", sku: "", barcode: "", category: "", price: "", quantity: "", description: "" });
+    };
 
     // Separate admin warehouse vs franchise inventory
     const warehouseInventory = useMemo(() =>
@@ -41,21 +143,16 @@ export function AdminInventoryPage() {
         [inventory]
     );
 
-    // Per-franchise breakdown (discover franchise IDs from both franchise list and inventory)
     const franchiseBreakdown = useMemo(() => {
-        // Collect all unique franchise IDs from inventory
         const inventoryFranchiseIds = new Set(
             inventory
                 .filter((item: InventoryItem) => !!item.franchiseId)
                 .map((item: InventoryItem) => item.franchiseId as string)
         );
-
-        // Merge with known franchises
         const allFranchiseIds = new Set([
             ...franchises.map((f: Franchise) => f.id),
             ...inventoryFranchiseIds,
         ]);
-
         return Array.from(allFranchiseIds).map(fId => {
             const known = franchises.find((f: Franchise) => f.id === fId);
             const items = inventory.filter((item: InventoryItem) => item.franchiseId === fId);
@@ -77,22 +174,19 @@ export function AdminInventoryPage() {
         });
     }, [franchises, inventory]);
 
-    // Get items for current view
     const currentItems = useMemo(() => {
         let items: InventoryItem[] = [];
-        if (activeTab === "warehouse") {
-            items = warehouseInventory;
-        } else if (activeTab === "all-franchises") {
-            items = franchiseInventory;
-        } else if (activeTab === "per-franchise" && selectedFranchiseId) {
+        if (activeTab === "warehouse") items = warehouseInventory;
+        else if (activeTab === "all-franchises") items = franchiseInventory;
+        else if (activeTab === "per-franchise" && selectedFranchiseId)
             items = inventory.filter((item: InventoryItem) => item.franchiseId === selectedFranchiseId);
-        }
 
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             items = items.filter(item =>
                 item.itemName.toLowerCase().includes(q) ||
-                item.sku.toLowerCase().includes(q)
+                item.sku.toLowerCase().includes(q) ||
+                (item.barcode || "").toLowerCase().includes(q)
             );
         }
         return items;
@@ -121,16 +215,150 @@ export function AdminInventoryPage() {
         <div className="min-h-screen bg-gray-50 font-inter">
             <div className="w-full max-w-[1400px] mx-auto p-6 space-y-6">
                 {/* Header */}
-                <div className="flex items-center gap-4">
-                    <HamburgerMenu />
-                    <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                        <Package className="w-6 h-6 text-purple-600" />
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <HamburgerMenu />
+                        <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                            <Package className="w-6 h-6 text-purple-600" />
+                        </div>
+                        <div>
+                            <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">Inventory Management</h1>
+                            <p className="text-gray-600 text-sm">Admin warehouse and franchise inventories</p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">Inventory Management</h1>
-                        <p className="text-gray-600 text-sm">Admin warehouse and franchise inventories</p>
-                    </div>
+                    <Button
+                        onClick={() => { setShowAddPanel(true); setMatchedItem(null); }}
+                        className="bg-gray-900 hover:bg-gray-800 gap-2"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Add / Restock via Scan
+                    </Button>
                 </div>
+
+                {/* Scan + Add Panel */}
+                {showAddPanel && (
+                    <Card className="border-2 border-dashed border-gray-300 bg-white shadow-sm">
+                        <CardHeader className="pb-3 border-b border-gray-100">
+                            <div className="flex items-center justify-between">
+                                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                                    <Scan className="w-5 h-5 text-purple-600" />
+                                    {matchedItem ? `Restock: ${matchedItem.itemName}` : scannedBarcode ? "New Item Details" : "Scan or Enter Barcode"}
+                                </CardTitle>
+                                <Button variant="ghost" size="icon" onClick={resetPanel} className="h-8 w-8">
+                                    <X className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="p-6 space-y-6">
+                            {/* Step 1: Scan */}
+                            {!scannedBarcode ? (
+                                <div className="space-y-4">
+                                    <div className="flex gap-3">
+                                        <Input
+                                            value={manualBarcode}
+                                            onChange={e => setManualBarcode(e.target.value)}
+                                            placeholder="Enter or scan barcode..."
+                                            className="flex-1"
+                                            onKeyDown={e => e.key === 'Enter' && handleManualLookup()}
+                                        />
+                                        <Button onClick={handleManualLookup} variant="outline">
+                                            <Search className="w-4 h-4 mr-2" /> Lookup
+                                        </Button>
+                                        <Button onClick={() => setIsScanning(true)} variant="outline" className="text-purple-600 border-purple-200 hover:bg-purple-50">
+                                            <Camera className="w-4 h-4 mr-2" /> Camera
+                                        </Button>
+                                    </div>
+                                    <p className="text-xs text-gray-500">Scan a barcode to restock an existing item, or add a new one.</p>
+                                </div>
+                            ) : matchedItem ? (
+                                /* Step 2a: Restock existing */
+                                <div className="space-y-4">
+                                    <div className="p-4 bg-green-50 rounded-lg border border-green-200 flex items-start justify-between">
+                                        <div>
+                                            <p className="font-semibold text-gray-900">{matchedItem.itemName}</p>
+                                            <p className="text-sm text-gray-600 mt-1">SKU: {matchedItem.sku} · Current stock: <strong>{matchedItem.quantity}</strong> units</p>
+                                            <p className="text-sm text-gray-600">Price: ₹{matchedItem.price.toFixed(2)} · Category: {matchedItem.category}</p>
+                                        </div>
+                                        <Button variant="ghost" size="sm" onClick={() => { setScannedBarcode(""); setManualBarcode(""); setMatchedItem(null); }} className="text-xs">
+                                            <RefreshCw className="w-3 h-3 mr-1" /> Rescan
+                                        </Button>
+                                    </div>
+                                    <div className="flex items-end gap-4">
+                                        <div className="flex-1">
+                                            <Label>Units to Add *</Label>
+                                            <Input
+                                                type="number"
+                                                min="1"
+                                                value={restockQty}
+                                                onChange={e => setRestockQty(e.target.value)}
+                                                placeholder="e.g. 50"
+                                                className="mt-1"
+                                            />
+                                        </div>
+                                        <Button onClick={handleRestock} disabled={isSaving} className="bg-green-600 hover:bg-green-700 text-white px-8">
+                                            {isSaving ? "Saving..." : `Add Stock → ${matchedItem.quantity + (parseInt(restockQty) || 0)} total`}
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                /* Step 2b: New item form */
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                                            Barcode <strong>{scannedBarcode}</strong> not found — fill in details to create a new product
+                                        </p>
+                                        <Button variant="ghost" size="sm" onClick={() => { setScannedBarcode(""); setManualBarcode(""); }} className="text-xs">
+                                            <RefreshCw className="w-3 h-3 mr-1" /> Rescan
+                                        </Button>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <Label>Item Name *</Label>
+                                            <Input className="mt-1" value={form.itemName} onChange={e => setForm(f => ({ ...f, itemName: e.target.value }))} placeholder="e.g. Basmati Rice 5kg" />
+                                        </div>
+                                        <div>
+                                            <Label>SKU *</Label>
+                                            <Input className="mt-1" value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))} placeholder="e.g. RICE-5KG" />
+                                        </div>
+                                        <div>
+                                            <Label>Barcode</Label>
+                                            <Input className="mt-1" value={form.barcode} onChange={e => setForm(f => ({ ...f, barcode: e.target.value }))} />
+                                        </div>
+                                        <div>
+                                            <Label>Category</Label>
+                                            <Input className="mt-1" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} placeholder="e.g. Groceries" />
+                                        </div>
+                                        <div>
+                                            <Label>Price (₹) *</Label>
+                                            <Input className="mt-1" type="number" min="0" step="0.01" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0.00" />
+                                        </div>
+                                        <div>
+                                            <Label>Initial Quantity *</Label>
+                                            <Input className="mt-1" type="number" min="1" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="1" />
+                                        </div>
+                                        <div className="col-span-2">
+                                            <Label>Description (optional)</Label>
+                                            <Input className="mt-1" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Brief product description" />
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end">
+                                        <Button onClick={handleAddNew} disabled={isSaving} className="bg-gray-900 hover:bg-gray-800 px-8">
+                                            {isSaving ? "Saving..." : "Add to Warehouse"}
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Camera Scanner Modal */}
+                {isScanning && (
+                    <CameraScanner
+                        onScan={handleScanResult}
+                        onClose={() => setIsScanning(false)}
+                    />
+                )}
 
                 {/* Summary Cards */}
                 <div className="grid grid-cols-3 gap-6">
@@ -229,7 +457,7 @@ export function AdminInventoryPage() {
                     </div>
                 )}
 
-                {/* Franchise overview cards (when All Franchises tab) */}
+                {/* Franchise overview cards */}
                 {activeTab === "all-franchises" && (
                     <div className="grid grid-cols-4 gap-4">
                         {franchiseBreakdown.map(f => (
@@ -265,7 +493,7 @@ export function AdminInventoryPage() {
                     <Input
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search by name or SKU..."
+                        placeholder="Search by name, SKU or barcode..."
                         className="pl-9"
                     />
                 </div>
@@ -290,6 +518,7 @@ export function AdminInventoryPage() {
                                     <tr className="text-left">
                                         <th className="px-4 py-3 text-sm font-semibold text-gray-900">Item Name</th>
                                         <th className="px-4 py-3 text-sm font-semibold text-gray-900">SKU</th>
+                                        <th className="px-4 py-3 text-sm font-semibold text-gray-900">Barcode</th>
                                         <th className="px-4 py-3 text-sm font-semibold text-gray-900">Category</th>
                                         {activeTab !== "warehouse" && (
                                             <th className="px-4 py-3 text-sm font-semibold text-gray-900">Franchise</th>
@@ -303,7 +532,7 @@ export function AdminInventoryPage() {
                                 <tbody>
                                     {currentItems.length === 0 ? (
                                         <tr>
-                                            <td colSpan={activeTab !== "warehouse" ? 8 : 7} className="py-8 text-center text-gray-500">
+                                            <td colSpan={activeTab !== "warehouse" ? 9 : 8} className="py-8 text-center text-gray-500">
                                                 {activeTab === "per-franchise" && !selectedFranchiseId
                                                     ? "Select a franchise to view inventory"
                                                     : "No items found"}
@@ -319,6 +548,7 @@ export function AdminInventoryPage() {
                                                         <p className="font-medium text-gray-900 text-sm">{item.itemName}</p>
                                                     </td>
                                                     <td className="px-4 py-3 text-sm text-gray-600">{item.sku}</td>
+                                                    <td className="px-4 py-3 text-sm text-gray-500 font-mono">{item.barcode || "—"}</td>
                                                     <td className="px-4 py-3">
                                                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                                                             {item.category}

@@ -1,61 +1,121 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth, Franchise } from "../../context/AuthContext";
 import { useInventory } from "../../context/InventoryContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { HamburgerMenu } from "../../components/HamburgerMenu";
 import {
-    BarChart3, TrendingUp, Package, IndianRupee, ShoppingCart,
-    Users, AlertCircle, LogOut, Store, MapPin, Truck
+    AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+    Tooltip, ResponsiveContainer, Legend, Cell
+} from "recharts";
+import {
+    Store, TrendingUp, Package, IndianRupee, ShoppingCart,
+    Users, AlertCircle, LogOut, MapPin, Truck, BarChart3
 } from "lucide-react";
 import { toast } from "sonner";
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const CHART_COLORS = {
+    revenue: "#10b981",    // emerald for franchise
+    revenueFill: "#10b98114",
+    sales: "#f97316",      // orange
+    bar1: "#10b981",
+    bar2: "#3b82f6",
+    bar3: "#f97316",
+    bar4: "#8b5cf6",
+    bar5: "#ec4899",
+};
+
+function fmt(n: number) {
+    if (n >= 1_00_000) return `₹${(n / 1_00_000).toFixed(1)}L`;
+    if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}K`;
+    return `₹${n.toFixed(0)}`;
+}
+
+const tooltipStyle = {
+    backgroundColor: "white",
+    border: "1px solid #e5e7eb",
+    borderRadius: "10px",
+    boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
+    padding: "10px 14px",
+    fontSize: 12,
+};
+
+// ── Component ─────────────────────────────────────────────────────────────────
 export function FranchiseDashboard() {
     const { profile, franchise, signOut } = useAuth();
     const { salesHistory, inventory, getLowStockItems } = useInventory();
 
-    // Only count this franchise's OWN inventory (exclude warehouse items)
+    // ── Data Prep ──
     const myInventory = useMemo(() =>
         inventory.filter((item: any) => item.franchiseId && item.franchiseId === franchise?.id),
         [inventory, franchise?.id]
     );
 
     const analytics = useMemo(() => {
-        const totalRevenue = salesHistory.reduce((sum: number, s: any) => sum + s.total, 0);
-        const totalSales = salesHistory.length;
+        // Own sales only
+        const mySales = salesHistory.filter((s: any) => s.franchiseId === franchise?.id);
+
+        const totalRevenue = mySales.reduce((sum: number, s: any) => sum + s.total, 0);
+        const totalSales = mySales.length;
         const totalItems = myInventory.length;
         const totalStock = myInventory.reduce((sum: number, i: any) => sum + i.quantity, 0);
         const lowStockItems = getLowStockItems(20).filter((i: any) => i.franchiseId === franchise?.id);
         const inventoryValue = myInventory.reduce((sum: number, i: any) => sum + (i.price * i.quantity), 0);
 
-        // Top products
+        // Monthly trend (last 12 months)
+        const now = new Date();
+        const monthBuckets: Record<string, { label: string; revenue: number; sales: number }> = {};
+        for (let i = 11; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const key = `${d.getFullYear()}-${d.getMonth()}`;
+            monthBuckets[key] = { label: MONTHS[d.getMonth()], revenue: 0, sales: 0 };
+        }
+        mySales.forEach((sale: any) => {
+            const d = new Date(sale.date);
+            const key = `${d.getFullYear()}-${d.getMonth()}`;
+            if (monthBuckets[key]) {
+                monthBuckets[key].revenue += sale.total;
+                monthBuckets[key].sales += 1;
+            }
+        });
+        const monthlyTrend = Object.values(monthBuckets);
+
+        // Top 5 products by revenue
         const productSales: Record<string, { name: string; qty: number; revenue: number }> = {};
-        salesHistory.forEach((sale: any) => {
+        mySales.forEach((sale: any) => {
             (sale.items || []).forEach((item: any) => {
-                if (!productSales[item.sku]) {
-                    productSales[item.sku] = { name: item.itemName, qty: 0, revenue: 0 };
-                }
+                if (!productSales[item.sku]) productSales[item.sku] = { name: item.itemName, qty: 0, revenue: 0 };
                 productSales[item.sku].qty += item.quantity;
                 productSales[item.sku].revenue += item.quantity * item.price;
             });
         });
         const topProducts = Object.entries(productSales)
-            .map(([sku, data]) => ({ sku, ...data }))
+            .map(([sku, d]) => ({ sku, ...d }))
             .sort((a, b) => b.revenue - a.revenue)
-            .slice(0, 5);
+            .slice(0, 6);
 
         // Recent sales
-        const recentSales = salesHistory.slice(0, 5);
+        const recentSales = mySales.slice(0, 8); // Top 8 most recent
 
-        // Today's sales
+        // Today's stats
         const today = new Date().toISOString().split("T")[0];
-        const todaySales = salesHistory.filter((s: any) => s.date?.startsWith(today));
+        const todaySales = mySales.filter((s: any) => s.date?.startsWith(today));
         const todayRevenue = todaySales.reduce((sum: number, s: any) => sum + s.total, 0);
+
+        // MoM growth
+        const lastTwo = monthlyTrend.slice(-2);
+        const momGrowth = lastTwo.length === 2 && lastTwo[0].revenue > 0
+            ? ((lastTwo[1].revenue - lastTwo[0].revenue) / lastTwo[0].revenue) * 100
+            : 0;
 
         return {
             totalRevenue, totalSales, totalItems, totalStock, lowStockItems,
-            inventoryValue, topProducts, recentSales, todaySales, todayRevenue
+            inventoryValue, topProducts, recentSales, todaySales, todayRevenue,
+            monthlyTrend, momGrowth
         };
     }, [salesHistory, myInventory, getLowStockItems, franchise?.id]);
 
@@ -65,205 +125,245 @@ export function FranchiseDashboard() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 font-inter">
-            <div className="w-full max-w-[1400px] mx-auto p-6 space-y-6">
-                {/* Header */}
+        <div className="min-h-screen bg-[#f8f9fb] font-inter pb-12">
+            <div className="w-full max-w-[1500px] mx-auto p-6 space-y-6">
+
+                {/* ── Header ── */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <HamburgerMenu />
-                        <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                            <Store className="w-6 h-6 text-purple-600" />
-                        </div>
                         <div>
-                            <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">
+                            <h1 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
+                                <Store className="w-6 h-6 text-emerald-600" />
                                 {franchise?.name || "My Franchise"}
                             </h1>
-                            <p className="text-gray-600 text-sm flex items-center gap-1">
-                                <MapPin className="w-3 h-3" />
-                                {franchise?.region}, {franchise?.state} · Welcome, {profile?.full_name}
+                            <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-1.5">
+                                <MapPin className="w-3.5 h-3.5" />
+                                {franchise?.region}, {franchise?.state} · Logged in as {profile?.full_name}
                             </p>
                         </div>
                     </div>
-                    <Button variant="ghost" onClick={handleSignOut} className="gap-2 text-gray-600">
-                        <LogOut className="w-4 h-4" />
-                        Sign Out
-                    </Button>
-                </div>
-
-                {/* Today's Summary Banner */}
-                <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl p-6 text-white">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm text-gray-300 font-medium">Today's Performance</p>
-                            <div className="flex items-baseline gap-4 mt-2">
-                                <p className="text-3xl font-bold">₹{analytics.todayRevenue.toFixed(0)}</p>
-                                <p className="text-sm text-gray-400">{analytics.todaySales.length} sales today</p>
-                            </div>
-                        </div>
+                    <div className="flex items-center gap-3">
                         <Link to="/sales">
-                            <Button className="bg-white text-gray-900 hover:bg-gray-100 gap-2">
+                            <Button className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-sm shadow-sm">
                                 <ShoppingCart className="w-4 h-4" /> New Sale
                             </Button>
                         </Link>
+                        <Button variant="ghost" onClick={handleSignOut} className="gap-2 text-gray-600 text-sm">
+                            <LogOut className="w-4 h-4" /> Sign Out
+                        </Button>
                     </div>
                 </div>
 
-                {/* Metrics */}
-                <div className="grid grid-cols-4 gap-4">
-                    <Card className="border border-gray-200 shadow-sm bg-white">
-                        <CardContent className="p-5">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Revenue</p>
-                                    <p className="text-2xl font-bold text-gray-900 mt-1">₹{(analytics.totalRevenue / 1000).toFixed(1)}K</p>
-                                </div>
-                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                                    <IndianRupee className="w-5 h-5 text-blue-600" />
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card className="border border-gray-200 shadow-sm bg-white">
-                        <CardContent className="p-5">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Sales</p>
-                                    <p className="text-2xl font-bold text-gray-900 mt-1">{analytics.totalSales}</p>
-                                </div>
-                                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                                    <TrendingUp className="w-5 h-5 text-green-600" />
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card className="border border-gray-200 shadow-sm bg-white">
-                        <CardContent className="p-5">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Inventory</p>
-                                    <p className="text-2xl font-bold text-gray-900 mt-1">{analytics.totalItems}</p>
-                                    <p className="text-xs text-gray-500">{analytics.totalStock} units</p>
-                                </div>
-                                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                                    <Package className="w-5 h-5 text-orange-600" />
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card className="border border-gray-200 shadow-sm bg-white">
-                        <CardContent className="p-5">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Low Stock</p>
-                                    <p className="text-2xl font-bold text-red-600 mt-1">{analytics.lowStockItems.length}</p>
-                                    <p className="text-xs text-gray-500">items ≤20 units</p>
-                                </div>
-                                <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                                    <AlertCircle className="w-5 h-5 text-red-600" />
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
-
-                <div className="grid grid-cols-3 gap-6">
-                    {/* Top Products */}
-                    <Card className="border border-gray-200 shadow-sm bg-white">
-                        <CardHeader className="pb-3 border-b border-gray-100">
-                            <CardTitle className="text-lg font-semibold text-gray-900">Top Products</CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-4">
-                            {analytics.topProducts.length === 0 ? (
-                                <p className="text-sm text-gray-500 text-center py-8">No sales data yet</p>
-                            ) : (
-                                <div className="space-y-3">
-                                    {analytics.topProducts.map((p: any, i: number) => (
-                                        <div key={p.sku} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                            <div className="flex items-center gap-3">
-                                                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 ? "bg-yellow-100 text-yellow-700" :
-                                                    i === 1 ? "bg-gray-200 text-gray-600" :
-                                                        "bg-gray-100 text-gray-500"
-                                                    }`}>
-                                                    {i + 1}
-                                                </span>
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-900">{p.name}</p>
-                                                    <p className="text-xs text-gray-500">{p.qty} units</p>
-                                                </div>
-                                            </div>
-                                            <p className="text-sm font-semibold">₹{p.revenue.toFixed(0)}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-
-                    {/* Recent Sales */}
-                    <Card className="border border-gray-200 shadow-sm bg-white col-span-2">
-                        <CardHeader className="pb-3 border-b border-gray-100">
-                            <div className="flex items-center justify-between">
-                                <CardTitle className="text-lg font-semibold text-gray-900">Recent Sales</CardTitle>
-                                <Link to="/sales-history">
-                                    <Button variant="ghost" size="sm" className="text-xs">View All →</Button>
-                                </Link>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="p-4">
-                            {analytics.recentSales.length === 0 ? (
-                                <div className="text-center py-8">
-                                    <ShoppingCart className="w-12 h-12 text-gray-200 mx-auto mb-2" />
-                                    <p className="text-sm text-gray-500">No sales yet</p>
-                                    <Link to="/sales">
-                                        <Button size="sm" className="mt-3 gap-1 bg-gray-900">
-                                            <ShoppingCart className="w-4 h-4" /> Make First Sale
-                                        </Button>
-                                    </Link>
-                                </div>
-                            ) : (
-                                <div className="space-y-2">
-                                    {analytics.recentSales.map((sale: any) => (
-                                        <div key={sale.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
-                                                    <Users className="w-4 h-4 text-gray-600" />
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-900">{sale.customerName}</p>
-                                                    <p className="text-xs text-gray-500">
-                                                        {new Date(sale.date).toLocaleDateString()} · {sale.items?.length || 0} items
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <p className="text-sm font-semibold text-gray-900">₹{sale.total.toFixed(2)}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-                </div>
-
-                {/* Quick Links */}
-                <div className="grid grid-cols-4 gap-4">
+                {/* ── Action Strip ── */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {[
-                        { to: "/sales", icon: ShoppingCart, label: "New Sale", color: "bg-blue-100 text-blue-600" },
-                        { to: "/order-stock", icon: Truck, label: "Order Stock", color: "bg-green-100 text-green-600" },
-                        { to: "/inventory", icon: BarChart3, label: "View Inventory", color: "bg-orange-100 text-orange-600" },
-                        { to: "/customers", icon: Users, label: "Customers", color: "bg-purple-100 text-purple-600" },
+                        { to: "/sales", icon: ShoppingCart, label: "Point of Sale", sub: "Ring up customers", color: "bg-emerald-50 text-emerald-600", border: "hover:border-emerald-200" },
+                        { to: "/inventory", icon: Package, label: "Local Inventory", sub: `${analytics.totalItems} items in stock`, color: "bg-blue-50 text-blue-600", border: "hover:border-blue-200" },
+                        { to: "/order-stock", icon: Truck, label: "Order Stock", sub: "Request from admin", color: "bg-indigo-50 text-indigo-600", border: "hover:border-indigo-200" },
+                        { to: "/customers", icon: Users, label: "Customers", sub: "View directory", color: "bg-amber-50 text-amber-600", border: "hover:border-amber-200" },
                     ].map((link) => (
                         <Link key={link.to} to={link.to}>
-                            <Card className="border border-gray-200 shadow-sm bg-white hover:shadow-md hover:border-gray-300 transition-all cursor-pointer">
-                                <CardContent className="p-5 flex items-center gap-4">
-                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${link.color}`}>
+                            <Card className={`border border-gray-200 shadow-sm bg-white hover:shadow-md transition-all cursor-pointer ${link.border}`}>
+                                <CardContent className="p-4 flex items-center gap-4">
+                                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${link.color}`}>
                                         <link.icon className="w-5 h-5" />
                                     </div>
-                                    <p className="text-sm font-medium text-gray-900">{link.label}</p>
+                                    <div>
+                                        <p className="text-sm font-semibold text-gray-900">{link.label}</p>
+                                        <p className="text-[11px] text-gray-500 mt-0.5">{link.sub}</p>
+                                    </div>
                                 </CardContent>
                             </Card>
                         </Link>
                     ))}
                 </div>
+
+                {/* ── KPI Strip ── */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    <Card className="bg-gradient-to-br from-gray-900 to-gray-800 border-none shadow-md text-white">
+                        <CardContent className="p-5">
+                            <div className="flex items-start justify-between">
+                                <div>
+                                    <p className="text-[11px] font-medium text-gray-300 uppercase tracking-wider">Today's Revenue</p>
+                                    <p className="text-2xl font-bold mt-1">₹{analytics.todayRevenue.toFixed(0)}</p>
+                                    <p className="text-xs mt-1 font-medium text-emerald-400">{analytics.todaySales.length} sales today</p>
+                                </div>
+                                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/10">
+                                    <TrendingUp className="w-4 h-4 text-white" />
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    {[
+                        { label: "Total Revenue", value: fmt(analytics.totalRevenue), sub: `${analytics.momGrowth >= 0 ? "+" : ""}${analytics.momGrowth.toFixed(1)}% MoM`, icon: IndianRupee, accent: "bg-emerald-50 text-emerald-600", positive: analytics.momGrowth >= 0 },
+                        { label: "Total Sales", value: analytics.totalSales.toLocaleString(), sub: "all time", icon: ShoppingCart, accent: "bg-blue-50 text-blue-600", positive: true },
+                        { label: "Total Stock Units", value: analytics.totalStock.toLocaleString(), sub: `Value: ${fmt(analytics.inventoryValue)}`, icon: Package, accent: "bg-orange-50 text-orange-600", positive: true },
+                        { label: "Low Stock Items", value: analytics.lowStockItems.length, sub: "≤20 units remaining", icon: AlertCircle, accent: "bg-red-50 text-red-600", positive: analytics.lowStockItems.length === 0 },
+                    ].map(kpi => (
+                        <Card key={kpi.label} className={`bg-white border shadow-sm ${!kpi.positive && kpi.label === 'Low Stock Items' ? 'border-red-200' : 'border-gray-200'}`}>
+                            <CardContent className="p-5">
+                                <div className="flex items-start justify-between">
+                                    <div>
+                                        <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">{kpi.label}</p>
+                                        <p className="text-2xl font-bold text-gray-900 mt-1">{kpi.value}</p>
+                                        <p className={`text-xs mt-1 font-medium ${kpi.positive ? "text-gray-500" : "text-red-500"}`}>{kpi.sub}</p>
+                                    </div>
+                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${kpi.accent}`}>
+                                        <kpi.icon className="w-4 h-4" />
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    ))}
+                </div>
+
+                {/* ── Row 3: Revenue Trend + Top Products ── */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Revenue Trend – spans 2/3 */}
+                    <Card className="lg:col-span-2 bg-white border border-gray-200 shadow-sm">
+                        <CardHeader className="pb-2">
+                            <div className="flex items-start justify-between">
+                                <div>
+                                    <CardTitle className="text-base font-semibold text-gray-900">Store Performance</CardTitle>
+                                    <p className="text-xs text-gray-400 mt-0.5">Revenue & Sales over last 12 months</p>
+                                </div>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="pt-2 pb-4 px-4">
+                            {analytics.monthlyTrend.some(m => m.revenue > 0) ? (
+                                <ResponsiveContainer width="100%" height={260}>
+                                    <AreaChart data={analytics.monthlyTrend} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                                        <defs>
+                                            <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor={CHART_COLORS.revenue} stopOpacity={0.18} />
+                                                <stop offset="95%" stopColor={CHART_COLORS.revenue} stopOpacity={0} />
+                                            </linearGradient>
+                                            <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor={CHART_COLORS.sales} stopOpacity={0.15} />
+                                                <stop offset="95%" stopColor={CHART_COLORS.sales} stopOpacity={0} />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                                        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                                        <YAxis tickFormatter={v => fmt(v)} tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} width={50} />
+                                        <Tooltip contentStyle={tooltipStyle} formatter={(v: number, name: string) => [name === "revenue" ? fmt(v) : v, name === "revenue" ? "Revenue" : "Sales"]} />
+                                        <Legend formatter={v => v === "revenue" ? "Revenue" : "Sales"} iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
+                                        <Area type="monotone" dataKey="revenue" stroke={CHART_COLORS.revenue} strokeWidth={2.5} fill="url(#revGrad)" dot={false} activeDot={{ r: 5, strokeWidth: 0 }} />
+                                        <Area type="monotone" dataKey="sales" stroke={CHART_COLORS.sales} strokeWidth={2} fill="url(#salesGrad)" dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                <div className="h-[260px] flex items-center justify-center text-sm text-gray-400">No sales data yet</div>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    {/* Top Products by Revenue – spans 1/3 */}
+                    <Card className="bg-white border border-gray-200 shadow-sm">
+                        <CardHeader className="pb-2">
+                            <div>
+                                <CardTitle className="text-base font-semibold text-gray-900">Bestsellers</CardTitle>
+                                <p className="text-xs text-gray-400 mt-0.5">Your top products by revenue</p>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="pt-0 px-4 pb-4">
+                            {analytics.topProducts.length === 0 ? (
+                                <div className="h-[260px] flex items-center justify-center text-sm text-gray-400">No sales data yet</div>
+                            ) : (
+                                <div className="space-y-4 mt-3">
+                                    {analytics.topProducts.map((p: any, i: number) => {
+                                        const pct = analytics.topProducts[0].revenue > 0
+                                            ? (p.revenue / analytics.topProducts[0].revenue) * 100 : 0;
+                                        const colors = [CHART_COLORS.bar1, CHART_COLORS.bar2, CHART_COLORS.bar3, CHART_COLORS.bar4, CHART_COLORS.bar5, "#a855f7"];
+                                        return (
+                                            <div key={p.sku}>
+                                                <div className="flex items-center justify-between mb-1.5">
+                                                    <span className="text-sm font-medium text-gray-800 truncate max-w-[150px]" title={p.name}>{p.name}</span>
+                                                    <span className="text-sm font-bold text-gray-900 ml-2">{fmt(p.revenue)}</span>
+                                                </div>
+                                                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                                    <div
+                                                        className="h-full rounded-full transition-all duration-500"
+                                                        style={{ width: `${pct}%`, backgroundColor: colors[i] }}
+                                                    />
+                                                </div>
+                                                <p className="text-[11px] text-gray-400 mt-1">{p.qty} units sold</p>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </div>
+
+                {/* ── Row 4: Recent Sales List ── */}
+                <Card className="bg-white border border-gray-200 shadow-sm">
+                    <CardHeader className="pb-2">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <CardTitle className="text-base font-semibold text-gray-900">Recent Transactions</CardTitle>
+                                <p className="text-xs text-gray-400 mt-0.5">Your store's latest sales activity</p>
+                            </div>
+                            <Link to="/sales-history">
+                                <Button variant="ghost" size="sm" className="text-xs gap-1 text-emerald-600 hover:text-emerald-700 -mt-1">
+                                    View full history
+                                </Button>
+                            </Link>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                        {analytics.recentSales.length === 0 ? (
+                            <div className="h-[200px] flex flex-col items-center justify-center gap-3 text-sm text-gray-400">
+                                <ShoppingCart className="w-10 h-10 text-gray-200" />
+                                <p>No sales yet</p>
+                                <Link to="/sales">
+                                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 gap-1"><ShoppingCart className="w-4 h-4" /> Make Front Desk Sale</Button>
+                                </Link>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="border-b border-gray-100 bg-gray-50/60">
+                                            <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500">Date & Time</th>
+                                            <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500">Customer</th>
+                                            <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500">Items</th>
+                                            <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500">Payment</th>
+                                            <th className="px-5 py-3 text-right text-xs font-semibold text-gray-500">Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {analytics.recentSales.map((sale: any) => (
+                                            <tr key={sale.id} className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors">
+                                                <td className="px-5 py-3 text-sm text-gray-500">
+                                                    {new Date(sale.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                                                </td>
+                                                <td className="px-5 py-3">
+                                                    <p className="text-sm font-medium text-gray-900">{sale.customerName}</p>
+                                                    {sale.customerPhone && <p className="text-xs text-gray-400">{sale.customerPhone}</p>}
+                                                </td>
+                                                <td className="px-5 py-3 text-sm text-gray-600">
+                                                    {sale.items?.length || 0} unique items
+                                                </td>
+                                                <td className="px-5 py-3">
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-gray-100 text-gray-700 uppercase">
+                                                        {sale.paymentMethod || 'CASH'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-5 py-3 text-sm font-bold text-gray-900 text-right">
+                                                    ₹{sale.total.toFixed(2)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
             </div>
         </div>
     );

@@ -1,6 +1,5 @@
 /**
  * Opens a new browser window with a formatted receipt and triggers print.
- * This avoids all Dialog/overlay issues entirely.
  */
 
 interface ReceiptItem {
@@ -8,6 +7,8 @@ interface ReceiptItem {
     quantity: number;
     price: number;
     discount?: number;
+    discountType?: 'percent' | 'flat';
+    discountValue?: number;
 }
 
 interface ReceiptData {
@@ -43,6 +44,17 @@ export function printReceipt(saleData: ReceiptData, shopDetails: ShopDetails, pr
             const itemTotal = item.quantity * item.price;
             const discount = item.discount || 0;
             const final = itemTotal - discount;
+
+            // Build discount label: "10% (₹50.00)" or "₹50.00" for flat
+            let discountLabel = "";
+            if (discount > 0) {
+                if (item.discountType === 'percent' && item.discountValue) {
+                    discountLabel = `${item.discountValue}% off (-₹${fmt(discount)})`;
+                } else {
+                    discountLabel = `-₹${fmt(discount)}`;
+                }
+            }
+
             return `
                 <tr>
                     <td style="padding:4px 0">${item.itemName}</td>
@@ -50,7 +62,7 @@ export function printReceipt(saleData: ReceiptData, shopDetails: ShopDetails, pr
                     <td style="padding:4px 0;text-align:right">₹${fmt(item.price)}</td>
                     <td style="padding:4px 0;text-align:right">₹${fmt(final)}</td>
                 </tr>
-                ${discount > 0 ? `<tr><td colspan="4" style="color:#888;font-size:11px;padding-bottom:4px">  Discount: -₹${fmt(discount)}</td></tr>` : ""}
+                ${discount > 0 ? `<tr><td colspan="4" style="color:#666;font-size:11px;padding-bottom:4px;padding-left:8px">  Discount: ${discountLabel}</td></tr>` : ""}
             `;
         })
         .join("");
@@ -78,6 +90,7 @@ export function printReceipt(saleData: ReceiptData, shopDetails: ShopDetails, pr
 <html>
 <head>
     <title>Receipt - ${shopDetails.name}</title>
+    <meta charset="utf-8">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -150,6 +163,9 @@ export function printReceipt(saleData: ReceiptData, shopDetails: ShopDetails, pr
 
     const targetWindow = printWindow || window.open("", "_blank");
     if (targetWindow) {
+        // document.open() clears any placeholder content written earlier
+        // (e.g. "Processing Payment...") before writing the actual receipt.
+        targetWindow.document.open();
         targetWindow.document.write(html);
         targetWindow.document.close();
     }
