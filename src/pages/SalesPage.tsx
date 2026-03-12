@@ -38,7 +38,15 @@ export function SalesPage() {
     const [entryMode, setEntryMode] = useState<"barcode" | "manual">("manual");
     const [items, setItems] = useState<SaleItem[]>([]);
     const { Razorpay } = useRazorpay();
-    const razorpayKey = (import.meta as any).env.VITE_RAZORPAY_KEY_ID;
+    const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID;
+
+    useEffect(() => {
+        if (razorpayKey) {
+            console.log(`[SalesPage] Razorpay key found: ${razorpayKey.substring(0, 4)}...`);
+        } else {
+            console.warn("[SalesPage] Razorpay key is MISSING from environment.");
+        }
+    }, [razorpayKey]);
 
     // Form fields
     const [selectedSku, setSelectedSku] = useState("");
@@ -419,9 +427,9 @@ export function SalesPage() {
                 taxRate,
                 taxAmount,
                 paymentMethod,
-                paymentDetails: paymentMethod === 'split'
+                paymentDetails: (paymentMethod === 'split'
                     ? paymentDetails
-                    : (transactionId ? { razorpay_payment_id: transactionId } : undefined),
+                    : (transactionId ? { razorpay_payment_id: transactionId } : undefined)) as any,
                 pointsUsed: actualPointsUsed
             });
 
