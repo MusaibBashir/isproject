@@ -406,7 +406,7 @@ export function SalesPage() {
             }
         }
 
-        const processSale = async (transactionId?: string, printWindow?: Window | null) => {
+        const processSale = async (transactionId?: string, printWindow?: Window | null, skipReceiptAndReset?: boolean) => {
             // Record the sale and update inventory
             const success = await recordSale({
                 items: items.map(item => ({
@@ -433,8 +433,15 @@ export function SalesPage() {
                 pointsUsed: actualPointsUsed
             });
 
+            if (skipReceiptAndReset) {
+                // For card/UPI: receipt was already printed and cart was already reset
+                // immediately after payment. Just propagate failure so the caller can toast.
+                if (!success) throw new Error("DB record failed");
+                return;
+            }
+
             if (success) {
-                // Print receipt in a new window
+                // Print receipt in a new window (cash/split path)
                 printReceipt(
                     {
                         date: new Date().toISOString(),
@@ -471,11 +478,32 @@ export function SalesPage() {
             }
         };
 
+
         if (paymentMethod === 'card' || paymentMethod === 'upi') {
             if (!razorpayKey) {
                 toast.error("Razorpay Sandbox Key is missing in .env configurations.");
                 return;
             }
+
+            // Capture a snapshot of all the data needed to print the receipt right now,
+            // before any async DB operations that would delay printing.
+            const receiptItems = items.map(item => ({
+                itemName: item.name,
+                quantity: item.quantity,
+                price: item.price,
+                discount: item.discount,
+            }));
+            const receiptSubtotal = subtotal;
+            const receiptDiscountTotal = totalDiscount;
+            const receiptTaxRate = taxRate;
+            const receiptTaxAmount = taxAmount;
+            const receiptGrandTotal = grandTotal;
+            const receiptCustomerName = customerName;
+            const receiptCustomerPhone = customerPhone;
+            const receiptCustomerEmail = customerEmail;
+            const receiptPaymentMethod = paymentMethod;
+            const receiptShopName = franchise?.name || "Mercanta";
+            const receiptShopAddress = franchise?.region ? `${franchise.region}, ${franchise.state}` : "Demo Address";
 
             // Open window synchronously to bypass popup blocker
             const printTarget = window.open("", "_blank");
@@ -490,8 +518,42 @@ export function SalesPage() {
                 name: franchise?.name || "Mercanta Store",
                 description: `Purchase Payment`,
                 handler: async function (response: any) {
-                    toast.success(`Payment verified! Txn ID: ${response.razorpay_payment_id}`);
-                    await processSale(response.razorpay_payment_id, printTarget);
+                    const transactionId = response.razorpay_payment_id;
+                    toast.success(`Payment successful! Txn ID: ${transactionId}`);
+
+                    // Print the receipt IMMEDIATELY — all data is already captured above.
+                    // Do NOT wait for the DB recordSale call.
+                    printReceipt(
+                        {
+                            date: new Date().toISOString(),
+                            customerName: receiptCustomerName,
+                            customerPhone: receiptCustomerPhone,
+                            customerEmail: receiptCustomerEmail,
+                            items: receiptItems,
+                            subtotal: receiptSubtotal,
+                            discountTotal: receiptDiscountTotal,
+                            taxRate: receiptTaxRate,
+                            taxAmount: receiptTaxAmount,
+                            total: receiptGrandTotal,
+                            paymentMethod: receiptPaymentMethod,
+                            transactionId,
+                        },
+                        {
+                            name: receiptShopName,
+                            address: receiptShopAddress,
+                        },
+                        printTarget
+                    );
+
+                    // Reset the cart immediately so the cashier can start the next sale.
+                    handleClearCart();
+                    toast.success("Sale completed successfully!");
+
+                    // Record the sale to the database in the background.
+                    // If it fails, show an error toast — the receipt has already been printed.
+                    processSale(transactionId, null, true).catch(() => {
+                        toast.error("Payment recorded but sale DB entry failed. Please log this manually.");
+                    });
                 },
                 modal: {
                     ondismiss: function () {

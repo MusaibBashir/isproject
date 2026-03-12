@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
-// Removed external hmac import due to denopkg.com deployment block
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -57,24 +56,19 @@ serve(async (req) => {
     console.log(`Received verified Razorpay webhook: ${event.event}`)
 
     // Create a Supabase client with the Service Role key
-    // This allows us to bypass RLS and update any matching sale
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // Handle payment.captured event (successful payment)
+    // Handle payment.captured or payment.authorized events
     if (event.event === 'payment.captured' || event.event === 'payment.authorized') {
       const payment = event.payload.payment.entity
       const paymentId = payment.id
-      const method = payment.method // upi, card, netbanking, etc
 
-      // We need to look up the sale containing this payment ID
-      // Since Option A was chosen, the frontend already inserted the sale
-      // with the paymentID stored in the JSONB payment_details column or via transactionId
       console.log(`Processing payment: ${paymentId}`)
 
-      // 1. CAPTURE THE PAYMENT (Fixes the "Authorized" status on Razorpay Dashboard)
-      // If this is an authorized event and we have API keys configured, instruct Razorpay to capture the funds.
+      // 1. CAPTURE THE PAYMENT (only needed for payment.authorized)
+      // If the payment is already captured, Razorpay returns 400 with "already been captured" — treat that as OK.
       if (event.event === 'payment.authorized') {
         const rzpKeyId = Deno.env.get('RAZORPAY_KEY_ID')
         const rzpKeySecret = Deno.env.get('RAZORPAY_KEY_SECRET')
@@ -96,9 +90,13 @@ serve(async (req) => {
             })
             
             if (!captureRes.ok) {
-              console.error(`Razorpay capture API failed with status ${captureRes.status}`)
               const errorText = await captureRes.text()
-              console.error(errorText)
+              // Check if payment was already captured — that's fine, treat it as success
+              if (captureRes.status === 400 && errorText.includes('already been captured')) {
+                console.log(`Payment ${paymentId} was already captured — continuing with sale update.`)
+              } else {
+                console.error(`Razorpay capture API failed with status ${captureRes.status}: ${errorText}`)
+              }
             } else {
               console.log(`Successfully captured payment ${paymentId}`)
             }
@@ -110,42 +108,59 @@ serve(async (req) => {
         }
       }
 
-      // 2. FIX RACE CONDITION
-      // The webhook fires in ~26ms, but the frontend React app might take ~500ms to finish
-      // recording the sale in the Supabase DB.
-      console.log(`Waiting 3 seconds to allow frontend to insert the sale record...`)
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Update the sale to specifically mark this payment as verified by webhook
-      // First find the sale that has this payment ID inside its payment_details JSONB
-      // Assuming frontend stores `{ "method": amount, "razorpay_payment_id": "pay_xyz" }`
-      // Or we can just search if it's in the payment_details anywhere
+      // 2. WAIT FOR FRONTEND TO INSERT SALE RECORD (with retry loop)
+      // The webhook fires quickly, but the frontend React app makes several sequential DB calls
+      // (find/create customer, insert sale, insert items, deduct inventory).
+      // Poll up to 10 times with 2-second intervals (max 20 seconds total).
+      console.log(`Waiting for frontend to insert sale record for payment ${paymentId}...`)
       
-      const { data, error } = await supabase
-        .from('sales')
-        .select('*')
-        .contains('payment_details', { razorpay_payment_id: paymentId })
-        .maybeSingle()
+      let saleData = null;
+      const MAX_ATTEMPTS = 10;
+      const RETRY_DELAY_MS = 2000;
 
-      if (error) {
-        console.error('Error finding sale:', error)
-      } else if (data) {
-        // Update the sale to indicate it was verified by webhook
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+
+        const { data, error } = await supabase
+          .from('sales')
+          .select('*')
+          .contains('payment_details', { razorpay_payment_id: paymentId })
+          .maybeSingle()
+
+        if (error) {
+          console.error(`Attempt ${attempt}/${MAX_ATTEMPTS} — DB error:`, error)
+          break; // Stop retrying on hard DB errors
+        }
+
+        if (data) {
+          saleData = data;
+          console.log(`Found sale on attempt ${attempt}/${MAX_ATTEMPTS}`)
+          break;
+        }
+
+        console.log(`Attempt ${attempt}/${MAX_ATTEMPTS} — Sale not yet found, retrying in ${RETRY_DELAY_MS / 1000}s...`)
+      }
+
+      if (saleData) {
+        // Update the sale to mark it as verified by webhook
         const updatedPaymentDetails = {
-          ...data.payment_details,
+          ...saleData.payment_details,
           webhook_verified: true,
           webhook_verified_at: new Date().toISOString()
         }
 
-        await supabase
+        const { error: updateError } = await supabase
           .from('sales')
           .update({ payment_details: updatedPaymentDetails })
-          .eq('id', data.id)
-          
-        console.log(`Successfully verified and updated sale: ${data.id}`)
+          .eq('id', saleData.id)
+
+        if (updateError) {
+          console.error(`Failed to update sale ${saleData.id}:`, updateError)
+        } else {
+          console.log(`Successfully verified and updated sale: ${saleData.id}`)
+        }
       } else {
-        console.log(`Sale with payment ID ${paymentId} not found. The frontend might still be inserting it, or it was never inserted.`)
-        // NOTE: If you decide to go with Option B later, this is where you would update the "pending" sale to "completed"
+        console.warn(`Sale with payment ID ${paymentId} not found after ${MAX_ATTEMPTS} attempts. The frontend may have failed to record it.`)
       }
     }
 
