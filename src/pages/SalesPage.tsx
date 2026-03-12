@@ -453,6 +453,8 @@ export function SalesPage() {
                             quantity: item.quantity,
                             price: item.price,
                             discount: item.discount,
+                            discountType: item.discountType,
+                            discountValue: item.discountValue,
                         })),
                         subtotal,
                         discountTotal: totalDiscount,
@@ -492,6 +494,8 @@ export function SalesPage() {
                 quantity: item.quantity,
                 price: item.price,
                 discount: item.discount,
+                discountType: item.discountType,
+                discountValue: item.discountValue,
             }));
             const receiptSubtotal = subtotal;
             const receiptDiscountTotal = totalDiscount;
