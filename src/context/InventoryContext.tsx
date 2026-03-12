@@ -41,6 +41,7 @@ export interface SaleRecord {
   taxAmount?: number;
   paymentMethod?: 'cash' | 'upi' | 'card' | 'split';
   paymentDetails?: Record<string, number>;
+  transactionId?: string;
   pointsEarned?: number;
   pointsUsed?: number;
 }
@@ -611,7 +612,9 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         tax_rate: sale.taxRate,
         tax_amount: sale.taxAmount,
         payment_method: sale.paymentMethod || 'cash',
-        payment_details: sale.paymentDetails,
+        payment_details: sale.paymentMethod === 'split'
+          ? sale.paymentDetails
+          : (sale.transactionId ? { razorpay_payment_id: sale.transactionId } : sale.paymentDetails),
       };
       if (authContext?.franchise?.id) {
         saleInsert.franchise_id = authContext.franchise.id;

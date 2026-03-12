@@ -419,7 +419,9 @@ export function SalesPage() {
                 taxRate,
                 taxAmount,
                 paymentMethod,
-                paymentDetails: paymentMethod === 'split' ? paymentDetails : undefined,
+                paymentDetails: paymentMethod === 'split'
+                    ? paymentDetails
+                    : (transactionId ? { razorpay_payment_id: transactionId } : undefined),
                 pointsUsed: actualPointsUsed
             });
 
