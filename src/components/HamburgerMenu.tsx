@@ -62,12 +62,9 @@ export function HamburgerMenu() {
       </SheetTrigger>
       <SheetContent side="left" className="w-80 bg-white">
         <SheetHeader>
-          <SheetTitle className="text-gray-900 text-xl">
-            {isAdmin ? "Admin Menu" : "Menu"}
-          </SheetTitle>
-          <SheetDescription className="text-gray-600">
-            {isAdmin ? "Manage franchises and analytics" : "Access your store tools"}
-          </SheetDescription>
+          <div className="flex items-center justify-center py-4">
+            <img src="/logo-transparent.png" alt="Mercanta Logo" className="w-[70%] h-auto object-contain mx-auto" />
+          </div>
         </SheetHeader>
 
         {/* Role badge */}

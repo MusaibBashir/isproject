@@ -156,11 +156,10 @@ export function AdminDashboard() {
                     <div className="flex items-center gap-4">
                         <HamburgerMenu />
                         <div>
-                            <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
-                                <BarChart3 className="w-8 h-8 text-indigo-600" />
-                                <span className="font-serif italic font-bold text-indigo-700 bg-indigo-50 px-3 py-1 rounded-md text-2xl tracking-wide select-none">Mercanta</span>
-                                <span className="text-gray-300 font-light hidden sm:inline">|</span>
-                                <span className="text-2xl hidden sm:inline">Core KPIs</span>
+                            <h1 className="flex items-center gap-3">
+                                <img src="/logo-transparent.png" className="h-16 w-auto object-contain" alt="Mercanta Logo" />
+                                <span className="text-gray-300 font-light hidden sm:inline ml-2">|</span>
+                                <span className="text-2xl hidden sm:inline ml-2 font-semibold">Core KPIs</span>
                             </h1>
                             <p className="text-sm text-gray-500 mt-1 font-medium">Welcome, {profile?.full_name || "Admin"} · All figures live</p>
                         </div>

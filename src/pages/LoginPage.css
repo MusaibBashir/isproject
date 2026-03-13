@@ -257,6 +257,15 @@
   appearance: none;
 }
 
+/* Chrome autofill styling fix to maintain black text and proper background */
+.field-input:-webkit-autofill,
+.field-input:-webkit-autofill:hover, 
+.field-input:-webkit-autofill:focus, 
+.field-input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px var(--off-white) inset !important;
+    -webkit-text-fill-color: #000000 !important;
+}
+
 .field-input::placeholder {
   color: #bbb8b3;
 }

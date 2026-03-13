@@ -6,19 +6,16 @@ import { LiquidGradient } from "../components/LiquidGradient";
 import "./LoginPage.css";
 
 const Ticker = () => {
-    const words = ['Supply Chain', 'Sales', 'Enterprise Management', 'Inventory'];
-    // We duplicate the first word at the end for a seamless loop appearance if we implemented true DOM sliding,
-    // but a React index-based translation is simpler and works well.
-    const extendedWords = [...words, words[0]]; 
-    
+    const words = ['Supply Chain', 'Sales', 'Enterprise', 'Inventory'];
+    const extendedWords = [...words, words[0]];
+
     const [current, setCurrent] = useState(0);
 
     useEffect(() => {
         const interval = setInterval(() => {
             setCurrent(c => {
                 if (c === words.length) {
-                    // reset with no transition
-                    return 0; // The transition back logic is handled in another effect if we want true seamless
+                    return 0;
                 }
                 return c + 1;
             });
@@ -29,11 +26,11 @@ const Ticker = () => {
     // Simple implementation for React: just translate by index * em
     return (
         <div className="ticker-wrap">
-            <div 
-                className="ticker-track" 
-                style={{ 
-                    transform: `translateY(-${current * 100 / extendedWords.length}%)`, 
-                    transition: current === 0 ? 'none' : 'transform 520ms cubic-bezier(0.77,0,0.175,1)' 
+            <div
+                className="ticker-track"
+                style={{
+                    transform: `translateY(-${current * 100 / extendedWords.length}%)`,
+                    transition: current === 0 ? 'none' : 'transform 520ms cubic-bezier(0.77,0,0.175,1)'
                 }}
             >
                 {extendedWords.map((w, i) => (
@@ -136,7 +133,7 @@ export function LoginPage() {
                     <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1 }}>
                         <LiquidGradient />
                     </div>
-                    
+
                     <div className="gradient-overlay-text">
                         <div className="tagline-static">
                             <span>Get Set for</span>
@@ -148,14 +145,8 @@ export function LoginPage() {
                 {/* ── 30% — Login Panel ── */}
                 <div className="login-side">
                     {/* Logo */}
-                    <div className="login-logo">
-                        <div className="logo-mark">
-                            <svg className="logo-icon" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <rect width="36" height="36" rx="8" fill="#F15A22"/>
-                                <path d="M9 26V10l9 10 9-10v16" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                            <span className="logo-wordmark">Mercanta</span>
-                        </div>
+                    <div className="login-logo mb-10 w-[70%] mx-auto">
+                        <img src="/logo-transparent.png" alt="Mercanta Logo" className="w-full h-auto object-contain block" />
                     </div>
 
                     {/* Header */}
@@ -196,22 +187,22 @@ export function LoginPage() {
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                 />
-                                <button 
-                                    type="button" 
-                                    className="password-toggle" 
+                                <button
+                                    type="button"
+                                    className="password-toggle"
                                     aria-label="Toggle password"
                                     onClick={() => setShowPassword(!showPassword)}
                                 >
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                                         {showPassword ? (
                                             <>
-                                                <line x1="1" y1="1" x2="23" y2="23"/>
-                                                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                                                <line x1="1" y1="1" x2="23" y2="23" />
+                                                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
                                             </>
                                         ) : (
                                             <>
-                                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                                                <circle cx="12" cy="12" r="3"/>
+                                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                                <circle cx="12" cy="12" r="3" />
                                             </>
                                         )}
                                     </svg>
@@ -247,7 +238,7 @@ export function LoginPage() {
             </div>
 
             {/* Custom cursor */}
-            <div 
+            <div
                 className={`custom-cursor flex items-center justify-center ${isHovering ? 'hovering' : ''}`}
                 style={{
                     left: cursorPos.x,
