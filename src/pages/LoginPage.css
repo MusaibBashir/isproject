@@ -1,0 +1,458 @@
+.login-page-wrapper {
+  --orange: #F15A22;
+  --navy: #0a0e27;
+  --white: #ffffff;
+  --off-white: #f8f7f5;
+  --light-gray: #e8e5e0;
+  --mid-gray: #9e9b96;
+  --dark-text: #1a1815;
+  --input-border: #d4d0ca;
+  --input-focus: #F15A22;
+
+  font-family: 'DM Sans', sans-serif;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  /* Use pointer-events: none on the custom cursor to not block clicks */
+}
+
+/* We don't disable native cursor immediately so that inputs still work properly.
+   But we can disable the body cursor and set pointer cursor on links. */
+.login-page-wrapper.no-cursor {
+  cursor: none;
+}
+.login-page-wrapper.no-cursor a,
+.login-page-wrapper.no-cursor button,
+.login-page-wrapper.no-cursor input {
+  cursor: none;
+}
+
+/* ── Layout ── */
+.login-layout {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  position: relative;
+}
+
+/* ── Left: Liquid Gradient (70%) ── */
+.gradient-side {
+  position: relative;
+  width: 70%;
+  height: 100%;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.gradient-overlay-text {
+  position: absolute;
+  z-index: 10;
+  bottom: 3rem;
+  left: 3rem;
+  right: 2rem;
+  color: white;
+  pointer-events: none;
+}
+
+/* "Get Set for" + ticker row */
+.tagline-static {
+  font-family: 'Syne', sans-serif;
+  font-size: clamp(2.2rem, 4.5vw, 4rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  flex-wrap: nowrap;
+  margin-bottom: 0;
+}
+
+/* Scrolling drum — mask-based fade, no hard box */
+.ticker-wrap {
+  display: inline-block;
+  height: 1.15em;
+  vertical-align: middle;
+  position: relative;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 35%,
+    black 65%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 35%,
+    black 65%,
+    transparent 100%
+  );
+}
+
+.ticker-track {
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+}
+
+.ticker-item {
+  font-family: 'DM Sans', sans-serif;
+  font-size: clamp(2.2rem, 4.5vw, 4rem);
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  opacity: 0.25;
+  transition: opacity 0.4s ease;
+  color: white;
+}
+
+.ticker-item.active {
+  font-weight: 300;
+  opacity: 1;
+}
+
+.custom-cursor {
+  position: fixed;
+  width: 36px;
+  height: 36px;
+  border: 1.5px solid rgba(255,255,255,0.8);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1000;
+  transform: translate(-50%, -50%);
+  transition: width 0.18s ease, height 0.18s ease, opacity 0.2s;
+  background: transparent;
+  will-change: transform;
+  mix-blend-mode: difference;
+}
+
+.custom-cursor::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 5px;
+  height: 5px;
+  background: white;
+  border-radius: 50%;
+}
+
+.custom-cursor.hovering {
+  width: 48px;
+  height: 48px;
+}
+
+/* ── Right: Login Panel (30%) ── */
+.login-side {
+  width: 30%;
+  height: 100%;
+  background: var(--white);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  padding: 3rem 2.5rem;
+  position: relative;
+  z-index: 10;
+  overflow-y: auto;
+}
+
+/* Subtle vertical rule between panels */
+.login-side::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10%;
+  height: 80%;
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, var(--light-gray) 30%, var(--light-gray) 70%, transparent);
+}
+
+/* Logo */
+.login-logo {
+  margin-bottom: 3rem;
+}
+
+.logo-mark {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.logo-icon {
+  width: 36px;
+  height: 36px;
+}
+
+.logo-wordmark {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--dark-text);
+}
+
+/* Header */
+.login-header {
+  margin-bottom: 2.5rem;
+}
+
+.login-header h1 {
+  font-family: 'Syne', sans-serif;
+  font-size: clamp(1.6rem, 2vw, 2rem);
+  font-weight: 700;
+  color: var(--dark-text);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  margin-bottom: 0.5rem;
+}
+
+.login-header p {
+  font-size: 0.85rem;
+  color: var(--mid-gray);
+  font-weight: 300;
+  letter-spacing: 0.01em;
+}
+
+/* Form */
+.login-form-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.field-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dark-text);
+}
+
+.field-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 1rem;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #000000; /* Forced black as requested */
+  background: var(--off-white);
+  outline: none;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.field-input::placeholder {
+  color: #bbb8b3;
+}
+
+.field-input:focus {
+  border-color: var(--input-focus);
+  background: var(--white);
+  box-shadow: 0 0 0 3px rgba(241, 90, 34, 0.08);
+}
+
+/* Password field wrapper */
+.password-wrapper {
+  position: relative;
+}
+
+.password-wrapper .field-input {
+  padding-right: 3rem;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--mid-gray);
+  padding: 0;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s;
+}
+
+.password-toggle:hover {
+  color: var(--dark-text);
+}
+
+/* Forgot password */
+.field-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.forgot-link {
+  font-size: 0.75rem;
+  color: var(--mid-gray);
+  text-decoration: none;
+  letter-spacing: 0.02em;
+  transition: color 0.2s;
+}
+
+.forgot-link:hover {
+  color: var(--orange);
+}
+
+/* Submit button */
+.login-btn {
+  width: 100%;
+  height: 52px;
+  border: none;
+  border-radius: 6px;
+  background: var(--orange);
+  color: white;
+  font-family: 'Syne', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.login-btn:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.login-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0);
+  transition: background 0.2s ease;
+  pointer-events: none;
+}
+
+.login-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(241, 90, 34, 0.3);
+}
+
+.login-btn:hover:not(:disabled)::before {
+  background: rgba(255,255,255,0.1);
+}
+
+.login-btn:active:not(:disabled) {
+  transform: translateY(0px);
+  box-shadow: 0 2px 8px rgba(241, 90, 34, 0.2);
+}
+
+/* Divider */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.25rem 0;
+}
+
+.divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--light-gray);
+}
+
+.divider-text {
+  font-size: 0.7rem;
+  color: var(--mid-gray);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Footer */
+.login-footer {
+  margin-top: 2.5rem;
+  text-align: center;
+}
+
+.login-footer p {
+  font-size: 0.78rem;
+  color: var(--mid-gray);
+}
+
+.login-footer a {
+  color: var(--orange);
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity 0.2s;
+}
+
+.login-footer a:hover {
+  opacity: 0.75;
+}
+
+/* Bottom copyright */
+.copyright {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.65rem;
+  color: #ccc9c3;
+  letter-spacing: 0.04em;
+}
+
+/* Entrance animations */
+.login-logo,
+.login-header,
+.login-form-custom,
+.login-footer {
+  animation: slideUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.login-logo { animation-delay: 0.1s; }
+.login-header { animation-delay: 0.2s; }
+.login-form-custom { animation-delay: 0.3s; }
+.login-footer { animation-delay: 0.4s; }
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Responsive for login side */
+@media (max-width: 1024px) {
+  .login-layout {
+    flex-direction: column;
+  }
+  .gradient-side {
+    width: 100%;
+    height: 40%;
+  }
+  .login-side {
+    width: 100%;
+    height: 60%;
+    padding-bottom: 4rem; /* ensure space for copyright */
+  }
+  .login-side::before {
+    display: none;
+  }
+}
