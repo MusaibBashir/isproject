@@ -1,22 +1,105 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
-import { Card, CardHeader, CardContent } from "../components/ui/card";
-import { BarChart3, Lock, Mail, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { LiquidGradient } from "../components/LiquidGradient";
+import "./LoginPage.css";
+
+const Ticker = () => {
+    const words = ['Supply Chain', 'Sales', 'Enterprise Management', 'Inventory'];
+    // We duplicate the first word at the end for a seamless loop appearance if we implemented true DOM sliding,
+    // but a React index-based translation is simpler and works well.
+    const extendedWords = [...words, words[0]];
+
+    const [current, setCurrent] = useState(0);
+    const [transitioning, setTransitioning] = useState(true);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setCurrent(c => {
+                if (c === words.length) {
+                    // reset with no transition
+                    return 0; // The transition back logic is handled in another effect if we want true seamless
+                }
+                return c + 1;
+            });
+        }, 2200);
+        return () => clearInterval(interval);
+    }, [words.length]);
+
+    // Simple implementation for React: just translate by index * em
+    return (
+        <div className="ticker-wrap">
+            <div
+                className="ticker-track"
+                style={{
+                    transform: `translateY(-${current * 100 / extendedWords.length}%)`,
+                    transition: current === 0 ? 'none' : 'transform 520ms cubic-bezier(0.77,0,0.175,1)'
+                }}
+            >
+                {extendedWords.map((w, i) => (
+                    <div key={i} className={`ticker-item ${i === current || (current === words.length && i === 0) ? 'active' : ''}`}>{w}</div>
+                ))}
+            </div>
+        </div>
+    );
+};
+import "./LoginPage.css";
+
+const Ticker = () => {
+    const words = ['Supply Chain', 'Sales', 'Enterprise Management', 'Inventory'];
+    // We duplicate the first word at the end for a seamless loop appearance if we implemented true DOM sliding,
+    // but a React index-based translation is simpler and works well.
+    const extendedWords = [...words, words[0]];
+
+    const [current, setCurrent] = useState(0);
+    const [transitioning, setTransitioning] = useState(true);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setCurrent(c => {
+                if (c === words.length) {
+                    // reset with no transition
+                    return 0; // The transition back logic is handled in another effect if we want true seamless
+                }
+                return c + 1;
+            });
+        }, 2200);
+        return () => clearInterval(interval);
+    }, [words.length]);
+
+    // Simple implementation for React: just translate by index * em
+    return (
+        <div className="ticker-wrap">
+            <div
+                className="ticker-track"
+                style={{
+                    transform: `translateY(-${current * 100 / extendedWords.length}%)`,
+                    transition: current === 0 ? 'none' : 'transform 520ms cubic-bezier(0.77,0,0.175,1)'
+                }}
+            >
+                {extendedWords.map((w, i) => (
+                    <div key={i} className={`ticker-item ${i === current || (current === words.length && i === 0) ? 'active' : ''}`}>{w}</div>
+                ))}
+            </div>
+        </div>
+    );
+};
 
 export function LoginPage() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [isSigningIn, setIsSigningIn] = useState(false);
+    const [cursorPos, setCursorPos] = useState({ x: -100, y: -100 });
+    const [isHovering, setIsHovering] = useState(false);
+
+    const [cursorPos, setCursorPos] = useState({ x: -100, y: -100 });
+    const [isHovering, setIsHovering] = useState(false);
+
     const navigate = useNavigate();
     const location = useLocation();
-
     const from = location.state?.from?.pathname || "/dashboard";
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -40,131 +123,307 @@ export function LoginPage() {
             });
 
             if (error) {
-                if (error.message.includes("Invalid login credentials")) {
-                    toast.error("Invalid email or password");
-                } else {
-                    toast.error(error.message);
+                if (error.message.includes("Invalid login credentials") || error.message.includes("Invalid login")) {
+                    if (error.message.includes("Invalid login credentials") || error.message.includes("Invalid login")) {
+                        toast.error("Invalid email or password");
+                    } else {
+                        toast.error(error.message);
+                    }
+                    return;
                 }
-                return;
+
+                toast.success("Successfully signed in");
+                setTimeout(() => {
+                    navigate(from, { replace: true });
+                }, 100);
+            } catch (error) {
+                console.error('Sign in error:', error);
+                toast.error("An unexpected error occurred. Please try again.");
+            } finally {
+                setIsSigningIn(false);
+            }
+        };
+
+        useEffect(() => {
+            const handleMouseMove = (e: MouseEvent) => {
+                setCursorPos({ x: e.clientX, y: e.clientY });
+            };
+            const handleMouseOver = (e: MouseEvent) => {
+                const target = e.target as HTMLElement;
+                const tag = target.tagName?.toLowerCase();
+                if (tag === 'a' || tag === 'button' || tag === 'input' || target.closest('a') || target.closest('button')) {
+                    setIsHovering(true);
+                } else {
+                    setIsHovering(false);
+                }
+            };
+
+            const wrapper = document.querySelector('.login-page-wrapper');
+            if (wrapper) {
+                wrapper.addEventListener('mousemove', handleMouseMove as any);
+                wrapper.addEventListener('mouseover', handleMouseOver as any);
+                document.body.style.cursor = 'none'; // Ensure default cursor is hidden
             }
 
-            toast.success("Successfully signed in");
-            setTimeout(() => {
-                navigate(from, { replace: true });
-            }, 100);
-        } catch (error) {
-            console.error('Sign in error:', error);
-            toast.error("An unexpected error occurred. Please try again.");
-        } finally {
-            setIsSigningIn(false);
-        }
-    };
+            return () => {
+                if (wrapper) {
+                    wrapper.removeEventListener('mousemove', handleMouseMove as any);
+                    wrapper.removeEventListener('mouseover', handleMouseOver as any);
+                }
+                document.body.style.cursor = 'auto'; // Restore default cursor on exit
+            };
+        }, []);
 
-    return (
-        <div className="flex min-h-screen w-full relative overflow-hidden bg-[#0a0e27] items-center justify-center p-4">
-            {/* Background: Full-screen Liquid Gradient */}
-            <div className="absolute inset-0 z-0 opacity-80">
-                <LiquidGradient />
-                <div className="absolute inset-0 pointer-events-none mix-blend-overlay opacity-30 bg-black" />
-            </div>
+        useEffect(() => {
+            const handleMouseMove = (e: MouseEvent) => {
+                setCursorPos({ x: e.clientX, y: e.clientY });
+            };
+            const handleMouseOver = (e: MouseEvent) => {
+                const target = e.target as HTMLElement;
+                const tag = target.tagName?.toLowerCase();
+                if (tag === 'a' || tag === 'button' || tag === 'input' || target.closest('a') || target.closest('button')) {
+                    setIsHovering(true);
+                } else {
+                    setIsHovering(false);
+                }
+            };
 
-            {/* Foreground: Centered Glassmorphism Login Card */}
-            <div className="w-full max-w-[420px] z-10 flex flex-col justify-center relative">
-                <Card 
-                    className="w-full relative overflow-hidden text-white border border-white/10 rounded-[2rem] shadow-2xl"
-                    style={{
-                        backgroundColor: "rgba(10, 10, 12, 0.4)",
-                        backdropFilter: "blur(24px)",
-                        WebkitBackdropFilter: "blur(24px)",
-                        boxShadow: "0 30px 60px -15px rgba(0, 0, 0, 0.6), inset 0 1px 0 0 rgba(255, 255, 255, 0.15)"
-                    }}
-                >
-                    {/* Top glass reflection light */}
-                    <div className="absolute top-0 left-0 right-0 h-[1px]" style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)" }} />
+            const wrapper = document.querySelector('.login-page-wrapper');
+            if (wrapper) {
+                wrapper.addEventListener('mousemove', handleMouseMove as any);
+                wrapper.addEventListener('mouseover', handleMouseOver as any);
+                document.body.style.cursor = 'none'; // Ensure default cursor is hidden
+            }
 
-                    <CardHeader className="pt-10 pb-6 text-center relative z-10">
-                        <div className="w-16 h-16 bg-white/5 rounded-[1.2rem] flex items-center justify-center mx-auto mb-5 shadow-2xl relative border border-white/20 backdrop-blur-md">
-                            <BarChart3 className="w-8 h-8 text-white drop-shadow-lg" />
+            return () => {
+                if (wrapper) {
+                    wrapper.removeEventListener('mousemove', handleMouseMove as any);
+                    wrapper.removeEventListener('mouseover', handleMouseOver as any);
+                }
+                document.body.style.cursor = 'auto'; // Restore default cursor on exit
+            };
+        }, []);
+
+        return (
+            <div className="login-page-wrapper no-cursor">
+                <div className="login-layout">
+                    {/* ── 70% — Liquid Gradient ── */}
+                    <div className="gradient-side" id="gradientSide">
+                        {/* The liquid gradient component wraps the threejs canvas */}
+                        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1 }}>
+                            <LiquidGradient />
                         </div>
-                        <h1 className="text-3xl font-serif italic text-white tracking-widest font-bold mb-1 drop-shadow-sm">Mercanta</h1>
-                        <p className="text-[11px] font-semibold tracking-[0.2em] uppercase mt-2 text-white/60">
-                            Secure Access
-                        </p>
-                    </CardHeader>
 
-                    <CardContent className="px-8 pb-10 z-10 relative">
-                        <form onSubmit={handleSubmit} className="space-y-6">
-                            <div className="space-y-2">
-                                <Label htmlFor="email" className="text-[11px] font-semibold text-white/70 uppercase tracking-widest ml-1">
-                                    Email Address
-                                </Label>
-                                <div className="relative group">
-                                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 transition-colors group-focus-within:text-white" />
-                                    <Input
-                                        id="email"
-                                        type="email"
-                                        value={email}
-                                        onChange={(e: any) => setEmail(e.target.value)}
-                                        placeholder="Enter your email"
-                                        className="pl-11 h-12 bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:bg-white/10 focus:border-white/30 focus:ring-1 focus:ring-white/30 transition-all rounded-xl outline-none"
-                                        autoComplete="email"
-                                    />
-                                </div>
+                        <div className="gradient-overlay-text">
+                            <div className="tagline-static">
+                                <span>Get Set for</span>
+                                <Ticker />
                             </div>
+                        </div>
+                    </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="password" className="text-[11px] font-semibold text-white/70 uppercase tracking-widest ml-1">
-                                    Password
-                                </Label>
-                                <div className="relative group">
-                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 transition-colors group-focus-within:text-white" />
-                                    <Input
-                                        id="password"
-                                        type={showPassword ? "text" : "password"}
-                                        value={password}
-                                        onChange={(e: any) => setPassword(e.target.value)}
-                                        placeholder="Enter your password"
-                                        className="pl-11 pr-11 h-12 bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:bg-white/10 focus:border-white/30 focus:ring-1 focus:ring-white/30 transition-all rounded-xl outline-none"
-                                        autoComplete="current-password"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
-                                    >
-                                        {showPassword ? (
-                                            <EyeOff className="w-4 h-4" />
-                                        ) : (
-                                            <Eye className="w-4 h-4" />
-                                        )}
-                                    </button>
-                                </div>
-                            </div>
+                    {/* ── 30% — Login Panel ── */}
+                    <div className="login-side">
+                        {/* Logo */}
+                        <div className="login-logo">
+                            <div className="logo-mark">
+                                <svg className="logo-icon" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <rect width="36" height="36" rx="8" fill="#F15A22" />
+                                    <path d="M9 26V10l9 10 9-10v16" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                                <span className="logo-wordmark">Mercanta</span>
+                                <div className="login-page-wrapper no-cursor">
+                                    <div className="login-layout">
+                                        {/* ── 70% — Liquid Gradient ── */}
+                                        <div className="gradient-side" id="gradientSide">
+                                            {/* The liquid gradient component wraps the threejs canvas */}
+                                            <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1 }}>
+                                                <LiquidGradient />
+                                            </div>
 
-                            <Button
-                                type="submit"
-                                disabled={isSigningIn}
-                                className="w-full h-12 mt-6 bg-white hover:bg-gray-200 text-black font-semibold rounded-xl transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:shadow-[0_0_30px_rgba(255,255,255,0.4)] hover:-translate-y-0.5"
-                            >
-                                {isSigningIn ? (
-                                    <div className="flex items-center justify-center gap-2">
-                                        <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                                        Authenticating...
+                                            <div className="gradient-overlay-text">
+                                                <div className="tagline-static">
+                                                    <span>Get Set for</span>
+                                                    <Ticker />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* ── 30% — Login Panel ── */}
+                                        <div className="login-side">
+                                            {/* Logo */}
+                                            <div className="login-logo">
+                                                <div className="logo-mark">
+                                                    <svg className="logo-icon" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                        <rect width="36" height="36" rx="8" fill="#F15A22" />
+                                                        <path d="M9 26V10l9 10 9-10v16" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                    </svg>
+                                                    <span className="logo-wordmark">Mercanta</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Header */}
+                                            <div className="login-header">
+                                                <h1>Welcome back</h1>
+                                                <p>Sign in to continue to your account</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Header */}
+                                        <div className="login-header">
+                                            <h1>Welcome back</h1>
+                                            <p>Sign in to continue to your account</p>
+                                        </div>
+
+                                        {/* Form */}
+                                        <form className="login-form-custom" onSubmit={handleSubmit}>
+                                            <div className="field-group">
+                                                <label className="field-label" htmlFor="email">Email</label>
+                                                <input
+                                                    type="email"
+                                                    id="email"
+                                                    className="field-input"
+                                                    placeholder="you@example.com"
+                                                    autoComplete="email"
+                                                    required
+                                                    value={email}
+                                                    onChange={(e) => setEmail(e.target.value)}
+                                                />
+                                            </div>
+
+                                            <div className="field-group">
+                                                <div className="field-row" style={{ justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.4rem' }}>
+                                                    <label className="field-label" htmlFor="password" style={{ marginBottom: 0 }}>Password</label>
+                                                    <a href="#" className="forgot-link">Forgot password?</a>
+                                                    {/* Form */}
+                                                    <form className="login-form-custom" onSubmit={handleSubmit}>
+                                                        <div className="field-group">
+                                                            <label className="field-label" htmlFor="email">Email</label>
+                                                            <input
+                                                                type="email"
+                                                                id="email"
+                                                                className="field-input"
+                                                                placeholder="you@example.com"
+                                                                autoComplete="email"
+                                                                required
+                                                                value={email}
+                                                                onChange={(e) => setEmail(e.target.value)}
+                                                            />
+                                                        </div>
+
+                                                        <div className="field-group">
+                                                            <div className="field-row" style={{ justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.4rem' }}>
+                                                                <label className="field-label" htmlFor="password" style={{ marginBottom: 0 }}>Password</label>
+                                                                <a href="#" className="forgot-link">Forgot password?</a>
+                                                            </div>
+                                                            <div className="password-wrapper">
+                                                                <input
+                                                                    type={showPassword ? "text" : "password"}
+                                                                    id="password"
+                                                                    className="field-input"
+                                                                    placeholder="••••••••"
+                                                                    autoComplete="current-password"
+                                                                    required
+                                                                    value={password}
+                                                                    onChange={(e) => setPassword(e.target.value)}
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    className="password-toggle"
+                                                                    aria-label="Toggle password"
+                                                                    onClick={() => setShowPassword(!showPassword)}
+                                                                >
+                                                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                                                        <div className="password-wrapper">
+                                                                            <input
+                                                                                type={showPassword ? "text" : "password"}
+                                                                                id="password"
+                                                                                className="field-input"
+                                                                                placeholder="••••••••"
+                                                                                autoComplete="current-password"
+                                                                                required
+                                                                                value={password}
+                                                                                onChange={(e) => setPassword(e.target.value)}
+                                                                            />
+                                                                            <button
+                                                                                type="button"
+                                                                                className="password-toggle"
+                                                                                aria-label="Toggle password"
+                                                                                onClick={() => setShowPassword(!showPassword)}
+                                                                            >
+                                                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                                                                    {showPassword ? (
+                                            <>
+                                                <line x1="1" y1="1" x2="23" y2="23"/>
+                                                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                                            </>
+                                            <>
+                                                <line x1="1" y1="1" x2="23" y2="23"/>
+                                                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                                            </>
+                                                                                    ) : (
+                                            <>
+                                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                                <circle cx="12" cy="12" r="3"/>
+                                            </>
+                                            <>
+                                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                                <circle cx="12" cy="12" r="3"/>
+                                            </>
+                                                                                    )}
+                                                                                </svg>
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                </div>
+
+                                                <button type="submit" className="login-btn" disabled={isSigningIn}>
+                                                    {isSigningIn ? (
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                            <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                <line x1="12" y1="2" x2="12" y2="6"></line>
+                                                                <line x1="12" y1="18" x2="12" y2="22"></line>
+                                                                <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                                                                <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                                                                <line x1="2" y1="12" x2="6" y2="12"></line>
+                                                                <line x1="18" y1="12" x2="22" y2="12"></line>
+                                                                <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+                                                                <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+                                                            </svg>
+                                                            Signing in...
+                                                        </div>
+                                                    ) : "Sign In"}
+                                                </button>
+                                        </form>
+
+                                        <div className="login-footer">
+                                            <p>Don't have an account? <a href="mailto:musaibbashir02@gmail.com">Contact us</a></p>
+                                        </div>
+
+                                        <div className="copyright">© 2025 Mercanta. All rights reserved.</div>
                                     </div>
-                                ) : (
-                                    "Sign In"
-                                )}
-                            </Button>
-                        </form>
-                    </CardContent>
-                </Card>
+                                </div>
 
-                <div className="w-full text-center mt-8 z-10">
-                    <p className="text-[10px] tracking-widest uppercase font-medium text-white/50 drop-shadow-sm">
-                        Contact your admin for account credentials
-                    </p>
-                </div>
-            </div>
-        </div>
-    );
+                                {/* Custom cursor */}
+                                <div
+                                    className={`custom-cursor flex items-center justify-center ${isHovering ? 'hovering' : ''}`}
+                                    style={{
+                                        left: cursorPos.x,
+                                        top: cursorPos.y,
+                                    }}
+                                />
+
+                                {/* Custom cursor */}
+                                <div
+                                    className={`custom-cursor flex items-center justify-center ${isHovering ? 'hovering' : ''}`}
+                                    style={{
+                                        left: cursorPos.x,
+                                        top: cursorPos.y,
+                                    }}
+                                />
+                            </div>
+                            );
 }
