@@ -16,6 +16,11 @@ import { InventoryProvider } from "./context/InventoryContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { LoginPage } from "./pages/LoginPage";
+import { BusinessSetupModal } from "./components/BusinessSetupModal";
+import { KitchenDisplaySystem } from "./components/KitchenDisplaySystem";
+import { TokenTracker } from "./components/TokenTracker";
+import { RestaurantSettings } from "./components/RestaurantSettings";
+import { RestaurantMenuPage } from "./pages/RestaurantMenuPage";
 import { AdminDashboard } from "./pages/admin/AdminDashboard";
 import { ManageFranchisesPage } from "./pages/admin/ManageFranchisesPage";
 import { FranchiseDetailPage } from "./pages/admin/FranchiseDetailPage";
@@ -34,7 +39,9 @@ import {
 } from "./pages";
 
 function RoleRedirect() {
-  const { user, profile, isLoading, error, signOut } = useAuth();
+  const { user, profile, isLoading, error, signOut, activeBusinessAccount, businessAccounts } = useAuth();
+  const [showBusinessSetup, setShowBusinessSetup] = useState(false);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -73,6 +80,21 @@ function RoleRedirect() {
     );
   }
 
+  // Feature 1: If user has no business accounts, show setup modal
+  if (!activeBusinessAccount || businessAccounts.length === 0) {
+    return (
+      <>
+        <BusinessSetupModal
+          isOpen={true}
+          onComplete={() => {
+            // Reload to show the new dashboard with business account context
+            window.location.href = "/#/";
+          }}
+        />
+      </>
+    );
+  }
+
   if (profile.role === "admin") return <Navigate to="/admin" replace />;
   return <Navigate to="/dashboard" replace />;
 }
@@ -102,6 +124,12 @@ export default function App() {
             {/* Role-specific shared pages */}
             <Route path="/sales" element={<ProtectedRoute requiredRole="franchise"><SalesPage /></ProtectedRoute>} />
             <Route path="/add-items" element={<ProtectedRoute requiredRole="admin"><AddItemsPage /></ProtectedRoute>} />
+
+            {/* Restaurant routes */}
+            <Route path="/kitchen" element={<ProtectedRoute><KitchenDisplaySystem /></ProtectedRoute>} />
+            <Route path="/tokens" element={<ProtectedRoute><TokenTracker /></ProtectedRoute>} />
+            <Route path="/menu" element={<ProtectedRoute><RestaurantMenuPage /></ProtectedRoute>} />
+            <Route path="/settings/restaurant" element={<ProtectedRoute><RestaurantSettings /></ProtectedRoute>} />
 
             {/* Shared routes (both roles) */}
             <Route path="/inventory" element={<ProtectedRoute><InventoryPage /></ProtectedRoute>} />

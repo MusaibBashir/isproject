@@ -12,6 +12,8 @@ import { PageContainer } from "../components/layout/PageContainer";
 import { printReceipt } from "../utils/printReceipt";
 import { CameraScanner } from "../components/CameraScanner";
 import { useRazorpay } from "react-razorpay";
+import { createOrderToken, printTokenReceipt } from "../services/tokenService";
+import { getRestaurantMenu, MenuItem } from "../services/menuService";
 
 interface SaleItem {
     id: string;
@@ -27,7 +29,11 @@ interface SaleItem {
 
 export function SalesPage() {
     const { getInventoryBySku, recordSale, inventory, getCustomerByPhone } = useInventory();
-    const { profile, franchise } = useAuth();
+    const { profile, franchise, activeBusinessAccount } = useAuth();
+
+    // Menu items for restaurants
+    const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+    const [loadingMenu, setLoadingMenu] = useState(false);
 
     // Franchise users: show only THEIR items. Admin: show all.
     const myInventory = useMemo(() => {
@@ -35,6 +41,20 @@ export function SalesPage() {
         if (!franchise?.id) return [];
         return inventory.filter((item: any) => item.franchiseId === franchise.id);
     }, [inventory, profile?.role, franchise?.id]);
+
+    // Load menu if restaurant
+    useEffect(() => {
+        if (activeBusinessAccount?.business_type === "restaurant" && activeBusinessAccount?.id) {
+            setLoadingMenu(true);
+            getRestaurantMenu(activeBusinessAccount.id)
+                .then(items => setMenuItems(items))
+                .catch(err => {
+                    console.error("Error loading menu:", err);
+                    toast.error("Failed to load menu items");
+                })
+                .finally(() => setLoadingMenu(false));
+        }
+    }, [activeBusinessAccount?.id, activeBusinessAccount?.business_type]);
     const [entryMode, setEntryMode] = useState<"barcode" | "manual">("manual");
     const [items, setItems] = useState<SaleItem[]>([]);
     const { Razorpay } = useRazorpay();
@@ -61,6 +81,10 @@ export function SalesPage() {
     const [customerEmail, setCustomerEmail] = useState("");
     const [additionalNotes, setAdditionalNotes] = useState("");
     const [isLookingUpCustomer, setIsLookingUpCustomer] = useState(false);
+
+    // Restaurant Order State
+    const [isRestaurantOrder, setIsRestaurantOrder] = useState(false);
+    const [specialInstructions, setSpecialInstructions] = useState("");
 
     // Payment Method State
     const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card' | 'split'>('cash');
@@ -144,21 +168,46 @@ export function SalesPage() {
         return matrix[b.length][a.length];
     };
 
-    // Fuzzy filtered inventory items
+    // Fuzzy filtered inventory items (or menu items for restaurants)
     const filteredInventory = useMemo(() => {
-        if (!searchQuery.trim()) return myInventory;
+        const itemsToSearch = activeBusinessAccount?.business_type === "restaurant" ? menuItems : myInventory;
+        
+        if (!searchQuery.trim()) return itemsToSearch;
         const query = searchQuery.toLowerCase();
-        return myInventory
+        
+        const levenshtein = (a: string, b: string): number => {
+            const matrix: number[][] = [];
+            for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+            for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+            for (let i = 1; i <= b.length; i++) {
+                for (let j = 1; j <= a.length; j++) {
+                    if (b[i - 1] === a[j - 1]) {
+                        matrix[i][j] = matrix[i - 1][j - 1];
+                    } else {
+                        matrix[i][j] = Math.min(
+                            matrix[i - 1][j - 1] + 1,
+                            matrix[i][j - 1] + 1,
+                            matrix[i - 1][j] + 1
+                        );
+                    }
+                }
+            }
+            return matrix[b.length][a.length];
+        };
+        
+        return itemsToSearch
             .map((item: any) => {
-                const name = item.itemName.toLowerCase();
-                const sku = item.sku.toLowerCase();
+                const name = activeBusinessAccount?.business_type === "restaurant" 
+                    ? item.item_name.toLowerCase() 
+                    : item.itemName.toLowerCase();
+                const sku = item.sku?.toLowerCase() || "";
                 // Exact substring match gets highest priority
                 if (name.includes(query) || sku.includes(query)) {
                     return { ...item, score: 0 };
                 }
                 // Fuzzy match on name and sku
-                const nameDistance = levenshteinDistance(query, name.substring(0, query.length));
-                const skuDistance = levenshteinDistance(query, sku.substring(0, query.length));
+                const nameDistance = levenshtein(query, name.substring(0, query.length));
+                const skuDistance = sku ? levenshtein(query, sku.substring(0, query.length)) : Infinity;
                 const minDistance = Math.min(nameDistance, skuDistance);
                 // Allow matches within a reasonable threshold
                 const threshold = Math.max(2, Math.floor(query.length / 3));
@@ -169,7 +218,7 @@ export function SalesPage() {
             })
             .filter(Boolean)
             .sort((a: any, b: any) => a.score - b.score);
-    }, [searchQuery, myInventory]);
+    }, [searchQuery, myInventory, menuItems, activeBusinessAccount?.business_type]);
 
     // Close dropdown on outside click or Escape
     useEffect(() => {
@@ -216,13 +265,25 @@ export function SalesPage() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [items, customerName, paymentMethod, paymentDetails, grandTotal]); // Dependencies needed for complete sale/hold sale handlers
 
-    const handleSelectItem = (sku: string) => {
-        setSelectedSku(sku);
-        const item = getInventoryBySku(sku);
-        if (item) {
-            setItemName(item.itemName);
-            setPrice(item.price);
-            setSearchQuery(item.itemName);
+    const handleSelectItem = (itemIdentifier: string) => {
+        if (activeBusinessAccount?.business_type === "restaurant") {
+            // For restaurants, itemIdentifier is the menu item name
+            const menuItem = menuItems.find((item: MenuItem) => item.item_name === itemIdentifier);
+            if (menuItem) {
+                setSelectedSku(menuItem.id); // Use item ID as SKU equivalent
+                setItemName(menuItem.item_name);
+                setPrice(menuItem.price);
+                setSearchQuery(menuItem.item_name);
+            }
+        } else {
+            // For franchises, use SKU lookup
+            setSelectedSku(itemIdentifier);
+            const item = getInventoryBySku(itemIdentifier);
+            if (item) {
+                setItemName(item.itemName);
+                setPrice(item.price);
+                setSearchQuery(item.itemName);
+            }
         }
         setIsDropdownOpen(false);
     };
@@ -254,7 +315,7 @@ export function SalesPage() {
 
     const handleAddItem = () => {
         if (!selectedSku) {
-            toast.error("Please select an item from inventory");
+            toast.error("Please select an item");
             return;
         }
 
@@ -263,30 +324,55 @@ export function SalesPage() {
             return;
         }
 
-        const inventoryItem = getInventoryBySku(selectedSku);
-        if (!inventoryItem) {
-            toast.error("Item not found in inventory");
-            return;
+        if (activeBusinessAccount?.business_type === "restaurant") {
+            // For restaurants, selectedSku is the menu item ID
+            const menuItem = menuItems.find((item: MenuItem) => item.id === selectedSku);
+            if (!menuItem) {
+                toast.error("Menu item not found");
+                return;
+            }
+
+            const newItem: SaleItem = {
+                id: Date.now().toString(),
+                sku: menuItem.id,
+                name: menuItem.item_name,
+                quantity,
+                price: menuItem.price,
+                discount: 0,
+                discountType: 'flat',
+                discountValue: 0
+            };
+
+            setItems([...items, newItem]);
+            toast.success("Item added to order");
+        } else {
+            // For franchises, use inventory logic
+            const inventoryItem = getInventoryBySku(selectedSku);
+            if (!inventoryItem) {
+                toast.error("Item not found in inventory");
+                return;
+            }
+
+            if (inventoryItem.quantity < quantity) {
+                toast.error(`Only ${inventoryItem.quantity} units available in stock`);
+                return;
+            }
+
+            const newItem: SaleItem = {
+                id: Date.now().toString(),
+                sku: inventoryItem.sku,
+                name: inventoryItem.itemName,
+                quantity,
+                price: inventoryItem.price,
+                barcode: inventoryItem.barcode,
+                discount: 0,
+                discountType: 'flat',
+                discountValue: 0
+            };
+
+            setItems([...items, newItem]);
+            toast.success("Item added to sale");
         }
-
-        if (inventoryItem.quantity < quantity) {
-            toast.error(`Only ${inventoryItem.quantity} units available in stock`);
-            return;
-        }
-
-        const newItem: SaleItem = {
-            id: Date.now().toString(),
-            sku: inventoryItem.sku,
-            name: inventoryItem.itemName,
-            quantity,
-            price: inventoryItem.price,
-            barcode: inventoryItem.barcode,
-            discount: 0,
-            discountType: 'flat',
-            discountValue: 0
-        };
-
-        setItems([...items, newItem]);
 
         // Reset item fields
         setSelectedSku("");
@@ -295,8 +381,6 @@ export function SalesPage() {
         setPrice(0);
         setBarcode("");
         setSearchQuery("");
-
-        toast.success("Item added to sale");
     };
 
     const handleRemoveItem = (id: string) => {
@@ -329,11 +413,14 @@ export function SalesPage() {
         if (newQuantity <= 0) return;
         setItems(items.map(item => {
             if (item.id === id) {
-                // Check stock (optional but good practice)
-                const inventoryItem = myInventory.find((i: any) => i.sku === item.sku);
-                if (inventoryItem && inventoryItem.quantity < newQuantity) {
-                    toast.error(`Only ${inventoryItem.quantity} units available in stock for ${item.name}`);
-                    return item; // Keep old quantity
+                // Skip stock check for restaurants
+                if (activeBusinessAccount?.business_type !== "restaurant") {
+                    // Check stock (optional but good practice) for franchises only
+                    const inventoryItem = myInventory.find((i: any) => i.sku === item.sku);
+                    if (inventoryItem && inventoryItem.quantity < newQuantity) {
+                        toast.error(`Only ${inventoryItem.quantity} units available in stock for ${item.name}`);
+                        return item; // Keep old quantity
+                    }
                 }
 
                 // Recalculate discount if it's a percentage
@@ -367,6 +454,11 @@ export function SalesPage() {
     };
 
     const handleScanBarcode = (scannedBarcode?: string) => {
+        if (activeBusinessAccount?.business_type === "restaurant") {
+            toast.error("Barcode scanning is not available for restaurants");
+            return;
+        }
+
         const barcodeToLookup = scannedBarcode || barcode;
         if (!barcodeToLookup.trim()) {
             toast.error("Please enter a barcode");
@@ -408,7 +500,7 @@ export function SalesPage() {
 
         const processSale = async (transactionId?: string, printWindow?: Window | null, skipReceiptAndReset?: boolean) => {
             // Record the sale and update inventory
-            const success = await recordSale({
+            const saleResult = await recordSale({
                 items: items.map(item => ({
                     sku: item.sku,
                     itemName: item.name,
@@ -431,7 +523,12 @@ export function SalesPage() {
                     ? paymentDetails
                     : (transactionId ? { razorpay_payment_id: transactionId } : undefined)) as any,
                 pointsUsed: actualPointsUsed
+            }, {
+                // Skip inventory checks for restaurant orders
+                skipInventoryCheck: activeBusinessAccount?.business_type === "restaurant"
             });
+
+            const success = saleResult.success;
 
             if (skipReceiptAndReset) {
                 // For card/UPI: receipt was already printed and cart was already reset
@@ -441,6 +538,38 @@ export function SalesPage() {
             }
 
             if (success) {
+                // Feature 2: Create token for restaurant orders
+                if (isRestaurantOrder && activeBusinessAccount && saleResult.saleId) {
+                    try {
+                        const tokenResult = await createOrderToken({
+                            sale_id: saleResult.saleId,
+                            business_account_id: activeBusinessAccount.id,
+                            customer_name: customerName,
+                            order_items: items.map(item => `${item.name} x${item.quantity}`).join(", "),
+                            notes: specialInstructions,
+                            is_restaurant_order: true
+                        });
+
+                        if (tokenResult.success) {
+                            // Print token receipt if enabled
+                            const itemsStr = items.map(item => `${item.name} x${item.quantity}`).join("\n");
+                            printTokenReceipt(
+                                tokenResult.data.token_number,
+                                customerName,
+                                itemsStr,
+                                grandTotal,
+                                specialInstructions
+                            );
+                            toast.success(`Order #${tokenResult.data.token_number} created!`);
+                        } else {
+                            console.error("Token creation failed:", tokenResult.error);
+                        }
+                    } catch (error) {
+                        console.error("Token creation error:", error);
+                        // Don't fail the sale if token creation fails
+                    }
+                }
+
                 // Print receipt in a new window (cash/split path)
                 printReceipt(
                     {
@@ -476,7 +605,10 @@ export function SalesPage() {
                 handleClearCart();
                 toast.success("Sale completed successfully!");
             } else {
-                toast.error("Failed to complete sale. Please check stock levels.");
+                const errorMsg = profile?.role === "admin" 
+                    ? `Sale failed: ${error || "Database error"}` 
+                    : "Failed to complete sale. Check console for details.";
+                toast.error(errorMsg);
             }
         };
 
@@ -670,31 +802,34 @@ export function SalesPage() {
                         </CardHeader>
                         <CardContent className="space-y-4">
                             {/* Entry Mode Toggle */}
-                            <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
-                                <button
-                                    onClick={() => setEntryMode("manual")}
-                                    className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${entryMode === "manual"
-                                        ? "bg-white text-gray-900 shadow-sm"
-                                        : "text-gray-600 hover:text-gray-900"
-                                        }`}
-                                >
-                                    <Keyboard className="w-4 h-4" />
-                                    Manual Entry
-                                </button>
-                                <button
-                                    onClick={() => setEntryMode("barcode")}
-                                    className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${entryMode === "barcode"
-                                        ? "bg-white text-gray-900 shadow-sm"
-                                        : "text-gray-600 hover:text-gray-900"
-                                        }`}
-                                >
-                                    <Scan className="w-4 h-4" />
-                                    Scan Barcode
-                                </button>
-                            </div>
+                            {/* Entry Mode Toggle - Only for franchises */}
+                            {activeBusinessAccount?.business_type !== "restaurant" && (
+                                <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
+                                    <button
+                                        onClick={() => setEntryMode("manual")}
+                                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${entryMode === "manual"
+                                            ? "bg-white text-gray-900 shadow-sm"
+                                            : "text-gray-600 hover:text-gray-900"
+                                            }`}
+                                    >
+                                        <Keyboard className="w-4 h-4" />
+                                        Manual Entry
+                                    </button>
+                                    <button
+                                        onClick={() => setEntryMode("barcode")}
+                                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${entryMode === "barcode"
+                                            ? "bg-white text-gray-900 shadow-sm"
+                                            : "text-gray-600 hover:text-gray-900"
+                                            }`}
+                                    >
+                                        <Scan className="w-4 h-4" />
+                                        Scan Barcode
+                                    </button>
+                                </div>
+                            )}
 
-                            {/* Barcode Scanner */}
-                            {entryMode === "barcode" && (
+                            {/* Barcode Scanner - Only for franchises */}
+                            {activeBusinessAccount?.business_type !== "restaurant" && entryMode === "barcode" && (
                                 <div className="space-y-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="barcode">Barcode</Label>
@@ -781,28 +916,44 @@ export function SalesPage() {
                                                     No items found{searchQuery && " — try a different search"}
                                                 </div>
                                             ) : (
-                                                filteredInventory.map((item: any) => (
-                                                    <button
-                                                        key={item.id}
-                                                        type="button"
-                                                        onClick={() => handleSelectItem(item.sku)}
-                                                        className={`w-full text-left px-4 py-2.5 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors ${selectedSku === item.sku ? "bg-blue-50" : ""
-                                                            }`}
-                                                    >
-                                                        <div className="flex justify-between items-center">
-                                                            <div>
-                                                                <p className="text-sm font-medium text-gray-900">{item.itemName}</p>
-                                                                <p className="text-xs text-gray-500">SKU: {item.sku}</p>
+                                                filteredInventory.map((item: any) => {
+                                                    const isRestaurant = activeBusinessAccount?.business_type === "restaurant";
+                                                    const itemId = isRestaurant ? item.id : item.sku;
+                                                    const itemName = isRestaurant ? item.item_name : item.itemName;
+                                                    return (
+                                                        <button
+                                                            key={itemId}
+                                                            type="button"
+                                                            onClick={() => handleSelectItem(itemName)}
+                                                            className={`w-full text-left px-4 py-2.5 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors ${selectedSku === itemId ? "bg-blue-50" : ""
+                                                                }`}
+                                                        >
+                                                            <div className="flex justify-between items-start">
+                                                                <div>
+                                                                    <p className="text-sm font-medium text-gray-900">{itemName}</p>
+                                                                    {isRestaurant ? (
+                                                                        <>
+                                                                            <p className="text-xs text-gray-500">{item.category}</p>
+                                                                            {item.description && (
+                                                                                <p className="text-xs text-gray-400">{item.description}</p>
+                                                                            )}
+                                                                        </>
+                                                                    ) : (
+                                                                        <p className="text-xs text-gray-500">SKU: {item.sku}</p>
+                                                                    )}
+                                                                </div>
+                                                                <div className="text-right">
+                                                                    <p className="text-sm font-medium text-gray-700">₹{item.price.toFixed(2)}</p>
+                                                                    {!isRestaurant && (
+                                                                        <p className={`text-xs ${item.quantity > 0 ? "text-green-600" : "text-red-500"}`}>
+                                                                            {item.quantity} in stock
+                                                                        </p>
+                                                                    )}
+                                                                </div>
                                                             </div>
-                                                            <div className="text-right">
-                                                                <p className="text-sm font-medium text-gray-700">₹{item.price.toFixed(2)}</p>
-                                                                <p className={`text-xs ${item.quantity > 0 ? "text-green-600" : "text-red-500"}`}>
-                                                                    {item.quantity} in stock
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                    </button>
-                                                ))
+                                                        </button>
+                                                    );
+                                                })
                                             )}
                                         </div>
                                     )}
@@ -905,6 +1056,37 @@ export function SalesPage() {
                                     rows={3}
                                 />
                             </div>
+
+                            {/* Restaurant Order Option */}
+                            {activeBusinessAccount?.business_type === "restaurant" && (
+                                <>
+                                    <div className="flex items-center gap-2 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                                        <input
+                                            type="checkbox"
+                                            id="isRestaurantOrder"
+                                            checked={isRestaurantOrder}
+                                            onChange={(e) => setIsRestaurantOrder(e.target.checked)}
+                                            className="w-4 h-4"
+                                        />
+                                        <label htmlFor="isRestaurantOrder" className="text-sm font-medium text-gray-700">
+                                            🍽️ Create Order Token
+                                        </label>
+                                    </div>
+
+                                    {isRestaurantOrder && (
+                                        <div className="space-y-2">
+                                            <Label htmlFor="specialInstructions">Special Instructions</Label>
+                                            <Textarea
+                                                id="specialInstructions"
+                                                value={specialInstructions}
+                                                onChange={(e) => setSpecialInstructions(e.target.value)}
+                                                placeholder="E.g., No peanuts, Extra sauce, Mild spice..."
+                                                rows={2}
+                                            />
+                                        </div>
+                                    )}
+                                </>
+                            )}
                         </CardContent>
                     </Card>
                 </div>

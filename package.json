@@ -49,6 +49,7 @@
             "react-router-dom": "^7.13.0",
             "recharts": "^2.15.2",
             "sonner": "^2.0.3",
+            "supabase": "^2.78.1",
             "tailwind-merge": "*",
             "three": "^0.183.2",
             "typescript": "^5.9.3",

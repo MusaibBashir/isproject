@@ -51,3 +51,5 @@ release/
 .VSCodeCounter/
 
 tmp_inspect.js
+New-Features-Documentation/
+supabase/

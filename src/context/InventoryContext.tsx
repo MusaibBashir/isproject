@@ -85,7 +85,7 @@ interface InventoryContextType {
   deleteInventoryItem: (id: string) => Promise<boolean>;
   getInventoryBySku: (sku: string) => InventoryItem | undefined;
   getCustomerByPhone: (phone: string) => Promise<Customer | null>;
-  recordSale: (sale: Omit<SaleRecord, "id" | "date" | "pointsEarned">) => Promise<boolean>;
+  recordSale: (sale: Omit<SaleRecord, "id" | "date" | "pointsEarned">, options?: { skipInventoryCheck?: boolean }) => Promise<{ success: boolean; saleId?: string }>;
   addCustomer: (customer: Omit<Customer, "id" | "createdAt" | "pointsBalance">) => Promise<Customer | null>;
   getTotalInventoryValue: () => number;
   getTotalInventoryCount: () => number;
@@ -544,14 +544,17 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 
   // Record sale
   const recordSale = async (
-    sale: Omit<SaleRecord, "id" | "date" | "pointsEarned">
-  ): Promise<boolean> => {
-    // Check stock availability
-    for (const saleItem of sale.items) {
-      const inventoryItem = getInventoryBySku(saleItem.sku);
-      if (!inventoryItem || inventoryItem.quantity < saleItem.quantity) {
-        setError(`Insufficient stock for ${saleItem.itemName}`);
-        return false;
+    sale: Omit<SaleRecord, "id" | "date" | "pointsEarned">,
+    options?: { skipInventoryCheck?: boolean }
+  ): Promise<{ success: boolean; saleId?: string }> => {
+    // Check stock availability (skip for restaurants)
+    if (!options?.skipInventoryCheck) {
+      for (const saleItem of sale.items) {
+        const inventoryItem = getInventoryBySku(saleItem.sku);
+        if (!inventoryItem || inventoryItem.quantity < saleItem.quantity) {
+          setError(`Insufficient stock for ${saleItem.itemName}`);
+          return { success: false };
+        }
       }
     }
 
@@ -573,7 +576,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       for (const saleItem of sale.items) {
         await updateInventoryQuantity(saleItem.sku, -saleItem.quantity);
       }
-      return true;
+      return { success: true, saleId: newSale.id };
     }
 
     try {
@@ -619,13 +622,20 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       if (authContext?.franchise?.id) {
         saleInsert.franchise_id = authContext.franchise.id;
       }
+      // Add business_account_id if available (for multi-tenancy in restaurants/new model)
+      if (authContext?.activeBusinessAccount?.id) {
+        saleInsert.business_account_id = authContext.activeBusinessAccount.id;
+      }
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
         .insert(saleInsert)
         .select()
         .single();
 
-      if (saleError) throw saleError;
+      if (saleError) {
+        console.error('Sale insert error details:', saleError);
+        throw saleError;
+      }
 
       // Insert sale items
       const saleItems = sale.items.map((item: SaleItem) => ({
@@ -646,32 +656,35 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       if (itemsError) throw itemsError;
 
       // Deduct inventory — target the franchise's own row when applicable
-      for (const saleItem of sale.items) {
-        const franchiseId = authContext?.franchise?.id;
-        let item: InventoryItem | undefined;
-        if (franchiseId) {
-          item = inventory.find(
-            (i: InventoryItem) => i.sku === saleItem.sku && i.franchiseId === franchiseId
-          );
-        }
-        if (!item) {
-          item = inventory.find((i: InventoryItem) => i.sku === saleItem.sku);
-        }
-        if (item) {
-          await supabase
-            .from('inventory')
-            .update({ quantity: item.quantity - saleItem.quantity })
-            .eq('id', item.id);
+      // Skip for restaurants (skipInventoryCheck = true)
+      if (!options?.skipInventoryCheck) {
+        for (const saleItem of sale.items) {
+          const franchiseId = authContext?.franchise?.id;
+          let item: InventoryItem | undefined;
+          if (franchiseId) {
+            item = inventory.find(
+              (i: InventoryItem) => i.sku === saleItem.sku && i.franchiseId === franchiseId
+            );
+          }
+          if (!item) {
+            item = inventory.find((i: InventoryItem) => i.sku === saleItem.sku);
+          }
+          if (item) {
+            await supabase
+              .from('inventory')
+              .update({ quantity: item.quantity - saleItem.quantity })
+              .eq('id', item.id);
+          }
         }
       }
 
       // Refresh data
       await fetchData();
-      return true;
+      return { success: true, saleId: saleData.id };
     } catch (err: any) {
       console.error('Error recording sale:', err);
       setError(err.message);
-      return false;
+      return { success: false };
     }
   };
 

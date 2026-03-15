@@ -11,9 +11,14 @@ import {
 } from "recharts";
 import {
     BarChart3, Store, TrendingUp, Package, IndianRupee,
-    MapPin, LogOut, Plus, ArrowUpRight, Users
+    MapPin, LogOut, Plus, ArrowUpRight, Users, Settings
 } from "lucide-react";
 import { toast } from "sonner";
+import { useDashboardSettings } from "../../hooks/useDashboardSettings";
+import {
+    DropdownMenu, DropdownMenuContent, DropdownMenuLabel,
+    DropdownMenuSeparator, DropdownMenuCheckboxItem, DropdownMenuTrigger
+} from "../../components/ui/dropdown-menu";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -57,6 +62,15 @@ export function AdminDashboard() {
     const { salesHistory, inventory } = useInventory();
     const [franchises, setFranchises] = useState<Franchise[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+
+    const { settings, toggleSetting } = useDashboardSettings('admin', {
+        showKpis: true,
+        showRevenueTrend: true,
+        showTopProducts: true,
+        showRegionRevenue: true,
+        showFranchisePerformance: true,
+        showMonthlyVolume: true,
+    });
 
     useEffect(() => {
         const load = async () => {
@@ -170,6 +184,37 @@ export function AdminDashboard() {
                                 <Store className="w-4 h-4" /> Manage Franchises
                             </Button>
                         </Link>
+
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="icon" className="border-gray-300">
+                                    <Settings className="w-4 h-4 text-gray-600" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                                <DropdownMenuLabel>Dashboard Widgets</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuCheckboxItem checked={settings.showKpis} onCheckedChange={() => toggleSetting('showKpis')}>
+                                    Core KPIs
+                                </DropdownMenuCheckboxItem>
+                                <DropdownMenuCheckboxItem checked={settings.showRevenueTrend} onCheckedChange={() => toggleSetting('showRevenueTrend')}>
+                                    Revenue Trend
+                                </DropdownMenuCheckboxItem>
+                                <DropdownMenuCheckboxItem checked={settings.showTopProducts} onCheckedChange={() => toggleSetting('showTopProducts')}>
+                                    Top Products
+                                </DropdownMenuCheckboxItem>
+                                <DropdownMenuCheckboxItem checked={settings.showRegionRevenue} onCheckedChange={() => toggleSetting('showRegionRevenue')}>
+                                    Region Revenue
+                                </DropdownMenuCheckboxItem>
+                                <DropdownMenuCheckboxItem checked={settings.showFranchisePerformance} onCheckedChange={() => toggleSetting('showFranchisePerformance')}>
+                                    Franchise Performance
+                                </DropdownMenuCheckboxItem>
+                                <DropdownMenuCheckboxItem checked={settings.showMonthlyVolume} onCheckedChange={() => toggleSetting('showMonthlyVolume')}>
+                                    Monthly Volume
+                                </DropdownMenuCheckboxItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+
                         <Button variant="ghost" onClick={async () => { await signOut(); toast.success("Signed out"); }} className="gap-2 text-gray-600 text-sm">
                             <LogOut className="w-4 h-4" /> Sign Out
                         </Button>
@@ -177,6 +222,7 @@ export function AdminDashboard() {
                 </div>
 
                 {/* ── KPI Strip ── */}
+                {settings.showKpis && (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                     {[
                         { label: "Total Revenue", value: fmt(analytics.totalRevenue), sub: `${analytics.momGrowth >= 0 ? "+" : ""}${analytics.momGrowth.toFixed(1)}% MoM`, icon: IndianRupee, accent: "bg-indigo-50 text-indigo-600", positive: analytics.momGrowth >= 0 },
@@ -201,11 +247,14 @@ export function AdminDashboard() {
                         </Card>
                     ))}
                 </div>
+                )}
 
                 {/* ── Row 2: Revenue Trend + Top Products ── */}
-                <div className="grid grid-cols-3 gap-6">
+                {(settings.showRevenueTrend || settings.showTopProducts) && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Revenue Trend – spans 2/3 */}
-                    <Card className="col-span-2 bg-white border border-gray-200 shadow-sm">
+                    {settings.showRevenueTrend && (
+                    <Card className={`bg-white border border-gray-200 shadow-sm ${settings.showTopProducts ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
                         <CardHeader className="pb-2">
                             <div className="flex items-start justify-between">
                                 <div>
@@ -248,9 +297,11 @@ export function AdminDashboard() {
                             )}
                         </CardContent>
                     </Card>
+                    )}
 
                     {/* Top Products by Revenue – spans 1/3 */}
-                    <Card className="bg-white border border-gray-200 shadow-sm">
+                    {settings.showTopProducts && (
+                    <Card className={`bg-white border border-gray-200 shadow-sm ${settings.showRevenueTrend ? '' : 'lg:col-span-3'}`}>
                         <CardHeader className="pb-2">
                             <div>
                                 <CardTitle className="text-base font-semibold text-gray-900">Top Products</CardTitle>
@@ -286,12 +337,16 @@ export function AdminDashboard() {
                             )}
                         </CardContent>
                     </Card>
+                    )}
                 </div>
+                )}
 
                 {/* ── Row 3: Regional Revenue + Franchise Table ── */}
-                <div className="grid grid-cols-3 gap-6">
+                {(settings.showRegionRevenue || settings.showFranchisePerformance) && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Regional Revenue Bar Chart – 1/3 */}
-                    <Card className="bg-white border border-gray-200 shadow-sm">
+                    {settings.showRegionRevenue && (
+                    <Card className={`bg-white border border-gray-200 shadow-sm ${settings.showFranchisePerformance ? '' : 'lg:col-span-3'}`}>
                         <CardHeader className="pb-2">
                             <div>
                                 <CardTitle className="text-base font-semibold text-gray-900">Revenue by Region</CardTitle>
@@ -328,9 +383,11 @@ export function AdminDashboard() {
                             )}
                         </CardContent>
                     </Card>
+                    )}
 
                     {/* Franchise Performance Table – 2/3 */}
-                    <Card className="col-span-2 bg-white border border-gray-200 shadow-sm">
+                    {settings.showFranchisePerformance && (
+                    <Card className={`bg-white border border-gray-200 shadow-sm ${settings.showRegionRevenue ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
                         <CardHeader className="pb-2">
                             <div className="flex items-start justify-between">
                                 <div>
@@ -391,10 +448,12 @@ export function AdminDashboard() {
                             )}
                         </CardContent>
                     </Card>
+                    )}
                 </div>
+                )}
 
                 {/* ── Row 4: Monthly Sales Bar Chart ── */}
-                {analytics.monthlyTrend.some(m => m.sales > 0) && (
+                {settings.showMonthlyVolume && analytics.monthlyTrend.some(m => m.sales > 0) && (
                     <Card className="bg-white border border-gray-200 shadow-sm">
                         <CardHeader className="pb-2">
                             <CardTitle className="text-base font-semibold text-gray-900">Monthly Transaction Volume</CardTitle>

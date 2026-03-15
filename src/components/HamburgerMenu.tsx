@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Menu, Plus, Package, TrendingUp, IndianRupee, Store, BarChart3, Users, History, LogOut, Home, FileText, ClipboardList, ShoppingCart } from "lucide-react";
+import { Menu, Plus, Package, TrendingUp, IndianRupee, Store, BarChart3, Users, History, LogOut, Home, FileText, ClipboardList, ShoppingCart, Monitor, Clock, Settings, UtensilsCrossed } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -11,12 +11,14 @@ import {
 } from "./ui/sheet";
 import { Button } from "./ui/button";
 import { useAuth } from "../context/AuthContext";
+import { AccountSwitcher } from "./AccountSwitcher";
 
 export function HamburgerMenu() {
   const [open, setOpen] = useState(false);
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, activeBusinessAccount } = useAuth();
   const navigate = useNavigate();
   const isAdmin = profile?.role === "admin";
+  const isRestaurant = activeBusinessAccount?.business_type === "restaurant";
 
   const adminItems = [
     { label: "Admin Dashboard", icon: Home, to: "/admin" },
@@ -40,7 +42,18 @@ export function HamburgerMenu() {
     { label: "Forecast", icon: TrendingUp, to: "/forecast" },
   ];
 
-  const menuItems = isAdmin ? adminItems : franchiseItems;
+  const restaurantItems = [
+    { label: "Dashboard", icon: Home, to: "/dashboard" },
+    { label: "Orders", icon: IndianRupee, to: "/sales" },
+    { label: "Menu", icon: UtensilsCrossed, to: "/menu" },
+    { label: "Kitchen Display", icon: Monitor, to: "/kitchen" },
+    { label: "Order Tracking", icon: Clock, to: "/tokens" },
+    { label: "Sales History", icon: History, to: "/sales-history" },
+    { label: "Customers", icon: Users, to: "/customers" },
+    { label: "Settings", icon: Settings, to: "/settings/restaurant" },
+  ];
+
+  const menuItems = isAdmin ? adminItems : isRestaurant ? restaurantItems : franchiseItems;
 
   const handleSignOut = async () => {
     setOpen(false);
@@ -67,11 +80,17 @@ export function HamburgerMenu() {
           </div>
         </SheetHeader>
 
+        {/* Feature 1: Account Switcher */}
+        <div className="px-4 py-2">
+          <AccountSwitcher onAccountSwitch={() => setOpen(false)} />
+        </div>
+
         {/* Role badge */}
         <div className="mt-4 mb-2 px-4">
-          <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${isAdmin ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
+          <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
+            isAdmin ? "bg-purple-100 text-purple-700" : isRestaurant ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700"
             }`}>
-            {isAdmin ? "Admin" : "Franchise"}
+            {isAdmin ? "Admin" : isRestaurant ? "Restaurant" : "Franchise"}
           </span>
         </div>
 

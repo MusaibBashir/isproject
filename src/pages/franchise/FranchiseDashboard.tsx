@@ -11,9 +11,14 @@ import {
 } from "recharts";
 import {
     Store, TrendingUp, Package, IndianRupee, ShoppingCart,
-    Users, AlertCircle, LogOut, MapPin, Truck, BarChart3
+    Users, AlertCircle, LogOut, MapPin, Truck, BarChart3, Settings
 } from "lucide-react";
 import { toast } from "sonner";
+import { useDashboardSettings } from "../../hooks/useDashboardSettings";
+import {
+    DropdownMenu, DropdownMenuContent, DropdownMenuLabel,
+    DropdownMenuSeparator, DropdownMenuCheckboxItem, DropdownMenuTrigger
+} from "../../components/ui/dropdown-menu";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -49,6 +54,14 @@ const tooltipStyle = {
 export function FranchiseDashboard() {
     const { profile, franchise, signOut } = useAuth();
     const { salesHistory, inventory, getLowStockItems } = useInventory();
+
+    const { settings, toggleSetting } = useDashboardSettings('franchise', {
+        showActionStrip: true,
+        showKpis: true,
+        showStorePerformance: true,
+        showBestsellers: true,
+        showRecentTransactions: true,
+    });
 
     // ── Data Prep ──
     const myInventory = useMemo(() =>
@@ -151,6 +164,34 @@ export function FranchiseDashboard() {
                                 <ShoppingCart className="w-4 h-4" /> New Sale
                             </Button>
                         </Link>
+
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="icon" className="border-gray-300">
+                                    <Settings className="w-4 h-4 text-gray-600" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                                <DropdownMenuLabel>Dashboard Widgets</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuCheckboxItem checked={settings.showActionStrip} onCheckedChange={() => toggleSetting('showActionStrip')}>
+                                    Quick Actions
+                                </DropdownMenuCheckboxItem>
+                                <DropdownMenuCheckboxItem checked={settings.showKpis} onCheckedChange={() => toggleSetting('showKpis')}>
+                                    Core KPIs
+                                </DropdownMenuCheckboxItem>
+                                <DropdownMenuCheckboxItem checked={settings.showStorePerformance} onCheckedChange={() => toggleSetting('showStorePerformance')}>
+                                    Store Performance
+                                </DropdownMenuCheckboxItem>
+                                <DropdownMenuCheckboxItem checked={settings.showBestsellers} onCheckedChange={() => toggleSetting('showBestsellers')}>
+                                    Bestsellers
+                                </DropdownMenuCheckboxItem>
+                                <DropdownMenuCheckboxItem checked={settings.showRecentTransactions} onCheckedChange={() => toggleSetting('showRecentTransactions')}>
+                                    Recent Transactions
+                                </DropdownMenuCheckboxItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+
                         <Button variant="ghost" onClick={handleSignOut} className="gap-2 text-gray-600 text-sm">
                             <LogOut className="w-4 h-4" /> Sign Out
                         </Button>
@@ -158,6 +199,7 @@ export function FranchiseDashboard() {
                 </div>
 
                 {/* ── Action Strip ── */}
+                {settings.showActionStrip && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {[
                         { to: "/sales", icon: ShoppingCart, label: "Point of Sale", sub: "Ring up customers", color: "bg-emerald-50 text-emerald-600", border: "hover:border-emerald-200" },
@@ -180,8 +222,10 @@ export function FranchiseDashboard() {
                         </Link>
                     ))}
                 </div>
+                )}
 
                 {/* ── KPI Strip ── */}
+                {settings.showKpis && (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                     <Card className="bg-gradient-to-br from-gray-900 to-gray-800 border-none shadow-md text-white">
                         <CardContent className="p-5">
@@ -219,11 +263,14 @@ export function FranchiseDashboard() {
                         </Card>
                     ))}
                 </div>
+                )}
 
                 {/* ── Row 3: Revenue Trend + Top Products ── */}
+                {(settings.showStorePerformance || settings.showBestsellers) && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Revenue Trend – spans 2/3 */}
-                    <Card className="lg:col-span-2 bg-white border border-gray-200 shadow-sm">
+                    {settings.showStorePerformance && (
+                    <Card className={`bg-white border border-gray-200 shadow-sm ${settings.showBestsellers ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
                         <CardHeader className="pb-2">
                             <div className="flex items-start justify-between">
                                 <div>
@@ -260,9 +307,11 @@ export function FranchiseDashboard() {
                             )}
                         </CardContent>
                     </Card>
+                    )}
 
                     {/* Top Products by Revenue – spans 1/3 */}
-                    <Card className="bg-white border border-gray-200 shadow-sm">
+                    {settings.showBestsellers && (
+                    <Card className={`bg-white border border-gray-200 shadow-sm ${settings.showStorePerformance ? '' : 'lg:col-span-3'}`}>
                         <CardHeader className="pb-2">
                             <div>
                                 <CardTitle className="text-base font-semibold text-gray-900">Bestsellers</CardTitle>
@@ -298,9 +347,12 @@ export function FranchiseDashboard() {
                             )}
                         </CardContent>
                     </Card>
+                    )}
                 </div>
+                )}
 
                 {/* ── Row 4: Recent Sales List ── */}
+                {settings.showRecentTransactions && (
                 <Card className="bg-white border border-gray-200 shadow-sm">
                     <CardHeader className="pb-2">
                         <div className="flex items-start justify-between">
@@ -365,6 +417,7 @@ export function FranchiseDashboard() {
                         )}
                     </CardContent>
                 </Card>
+                )}
 
             </div>
         </div>
