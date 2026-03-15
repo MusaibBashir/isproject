@@ -31,6 +31,8 @@ export function TokenTracker() {
         setUnpaidTokens(data || []);
       } catch (error) {
         console.error('Error fetching unpaid tokens:', error);
+        // Still close loading state even on error
+        setUnpaidTokens([]);
       } finally {
         setLoading(false);
       }
@@ -85,9 +87,9 @@ export function TokenTracker() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-3xl font-bold">Orders Paid But Not Received</h2>
-        <Badge className="text-lg px-4 py-2 bg-orange-500">
-          {unpaidTokens.length} Pending
+        <h2 className="text-3xl font-bold">Orders Ready for Pickup</h2>
+        <Badge className="text-lg px-4 py-2 bg-green-500">
+          {unpaidTokens.length} Ready
         </Badge>
       </div>
 
