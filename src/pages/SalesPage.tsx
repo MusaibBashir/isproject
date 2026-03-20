@@ -82,8 +82,8 @@ export function SalesPage() {
     const [additionalNotes, setAdditionalNotes] = useState("");
     const [isLookingUpCustomer, setIsLookingUpCustomer] = useState(false);
 
-    // Restaurant Order State
-    const [isRestaurantOrder, setIsRestaurantOrder] = useState(false);
+    // Restaurant Order State — always enabled for restaurant accounts
+    const isRestaurantOrder = activeBusinessAccount?.business_type === "restaurant";
     const [specialInstructions, setSpecialInstructions] = useState("");
 
     // Payment Method State
@@ -530,83 +530,80 @@ export function SalesPage() {
 
             const success = saleResult.success;
 
+            const createToken = async (saleId: string) => {
+                try {
+                    const tokenResult = await createOrderToken({
+                        sale_id: saleId,
+                        business_account_id: activeBusinessAccount!.id,
+                        customer_name: customerName,
+                        order_items: items.map(item => `${item.name} x${item.quantity}`).join(", "),
+                        notes: specialInstructions,
+                        is_restaurant_order: true
+                    });
+                    if (tokenResult.success) {
+                        printTokenReceipt(tokenResult.data.token_number);
+                        toast.success(`Order #${tokenResult.data.token_number} created!`);
+                    } else {
+                        console.error("Token creation failed:", tokenResult.error);
+                    }
+                } catch (error) {
+                    console.error("Token creation error:", error);
+                }
+            };
+
             if (skipReceiptAndReset) {
-                // For card/UPI: receipt was already printed and cart was already reset
-                // immediately after payment. Just propagate failure so the caller can toast.
+                // For card/UPI: cart was already reset. Just fail loudly or create token.
                 if (!success) throw new Error("DB record failed");
+                // Still create token for restaurant orders paid by card/UPI
+                if (isRestaurantOrder && activeBusinessAccount && saleResult.saleId) {
+                    await createToken(saleResult.saleId);
+                }
                 return;
             }
 
             if (success) {
-                // Feature 2: Create token for restaurant orders
                 if (isRestaurantOrder && activeBusinessAccount && saleResult.saleId) {
-                    try {
-                        const tokenResult = await createOrderToken({
-                            sale_id: saleResult.saleId,
-                            business_account_id: activeBusinessAccount.id,
-                            customer_name: customerName,
-                            order_items: items.map(item => `${item.name} x${item.quantity}`).join(", "),
-                            notes: specialInstructions,
-                            is_restaurant_order: true
-                        });
-
-                        if (tokenResult.success) {
-                            // Print token receipt if enabled
-                            const itemsStr = items.map(item => `${item.name} x${item.quantity}`).join("\n");
-                            printTokenReceipt(
-                                tokenResult.data.token_number,
-                                customerName,
-                                itemsStr,
-                                grandTotal,
-                                specialInstructions
-                            );
-                            toast.success(`Order #${tokenResult.data.token_number} created!`);
-                        } else {
-                            console.error("Token creation failed:", tokenResult.error);
-                        }
-                    } catch (error) {
-                        console.error("Token creation error:", error);
-                        // Don't fail the sale if token creation fails
-                    }
+                    // Restaurant: print token only, no full receipt
+                    await createToken(saleResult.saleId);
+                } else {
+                    // Non-restaurant: print full receipt
+                    printReceipt(
+                        {
+                            date: new Date().toISOString(),
+                            customerName,
+                            customerPhone,
+                            customerEmail,
+                            items: items.map(item => ({
+                                itemName: item.name,
+                                quantity: item.quantity,
+                                price: item.price,
+                                discount: item.discount,
+                                discountType: item.discountType,
+                                discountValue: item.discountValue,
+                            })),
+                            subtotal,
+                            discountTotal: totalDiscount,
+                            taxRate,
+                            taxAmount,
+                            total: grandTotal,
+                            paymentMethod,
+                            paymentDetails: paymentMethod === 'split' ? paymentDetails : undefined,
+                            transactionId,
+                        },
+                        {
+                            name: franchise?.name || "Mercanta",
+                            address: franchise?.region ? `${franchise.region}, ${franchise.state}` : "Demo Address",
+                        },
+                        printWindow
+                    );
                 }
-
-                // Print receipt in a new window (cash/split path)
-                printReceipt(
-                    {
-                        date: new Date().toISOString(),
-                        customerName,
-                        customerPhone,
-                        customerEmail,
-                        items: items.map(item => ({
-                            itemName: item.name,
-                            quantity: item.quantity,
-                            price: item.price,
-                            discount: item.discount,
-                            discountType: item.discountType,
-                            discountValue: item.discountValue,
-                        })),
-                        subtotal,
-                        discountTotal: totalDiscount,
-                        taxRate,
-                        taxAmount,
-                        total: grandTotal,
-                        paymentMethod,
-                        paymentDetails: paymentMethod === 'split' ? paymentDetails : undefined,
-                        transactionId,
-                    },
-                    {
-                        name: franchise?.name || "Mercanta",
-                        address: franchise?.region ? `${franchise.region}, ${franchise.state}` : "Demo Address",
-                    },
-                    printWindow
-                );
 
                 // Reset form
                 handleClearCart();
                 toast.success("Sale completed successfully!");
             } else {
-                const errorMsg = profile?.role === "admin" 
-                    ? `Sale failed: ${error || "Database error"}` 
+                const errorMsg = profile?.role === "admin"
+                    ? `Sale failed: ${error || "Database error"}`
                     : "Failed to complete sale. Check console for details.";
                 toast.error(errorMsg);
             }
@@ -641,8 +638,8 @@ export function SalesPage() {
             const receiptShopName = franchise?.name || "Mercanta";
             const receiptShopAddress = franchise?.region ? `${franchise.region}, ${franchise.state}` : "Demo Address";
 
-            // Open window synchronously to bypass popup blocker
-            const printTarget = window.open("", "_blank");
+            // Open print window synchronously to bypass popup blocker (non-restaurant only)
+            const printTarget = !isRestaurantOrder ? window.open("", "_blank") : null;
             if (printTarget) {
                 printTarget.document.write("<html><head><title>Processing Payment...</title></head><body style='font-family:sans-serif;padding:2rem;text-align:center;'><h2>Processing Payment...</h2><p>Please complete the payment in the Razorpay popup.<br>This window will update with your receipt automatically.</p></body></html>");
             }
@@ -657,29 +654,31 @@ export function SalesPage() {
                     const transactionId = response.razorpay_payment_id;
                     toast.success(`Payment successful! Txn ID: ${transactionId}`);
 
-                    // Print the receipt IMMEDIATELY — all data is already captured above.
-                    // Do NOT wait for the DB recordSale call.
-                    printReceipt(
-                        {
-                            date: new Date().toISOString(),
-                            customerName: receiptCustomerName,
-                            customerPhone: receiptCustomerPhone,
-                            customerEmail: receiptCustomerEmail,
-                            items: receiptItems,
-                            subtotal: receiptSubtotal,
-                            discountTotal: receiptDiscountTotal,
-                            taxRate: receiptTaxRate,
-                            taxAmount: receiptTaxAmount,
-                            total: receiptGrandTotal,
-                            paymentMethod: receiptPaymentMethod,
-                            transactionId,
-                        },
-                        {
-                            name: receiptShopName,
-                            address: receiptShopAddress,
-                        },
-                        printTarget
-                    );
+                    // Print full receipt immediately for non-restaurant orders.
+                    // Restaurant orders will print a token receipt after the DB call.
+                    if (!isRestaurantOrder && printTarget) {
+                        printReceipt(
+                            {
+                                date: new Date().toISOString(),
+                                customerName: receiptCustomerName,
+                                customerPhone: receiptCustomerPhone,
+                                customerEmail: receiptCustomerEmail,
+                                items: receiptItems,
+                                subtotal: receiptSubtotal,
+                                discountTotal: receiptDiscountTotal,
+                                taxRate: receiptTaxRate,
+                                taxAmount: receiptTaxAmount,
+                                total: receiptGrandTotal,
+                                paymentMethod: receiptPaymentMethod,
+                                transactionId,
+                            },
+                            {
+                                name: receiptShopName,
+                                address: receiptShopAddress,
+                            },
+                            printTarget
+                        );
+                    }
 
                     // Reset the cart immediately so the cashier can start the next sale.
                     handleClearCart();
@@ -1036,17 +1035,6 @@ export function SalesPage() {
                             </div>
 
                             <div className="space-y-2">
-                                <Label htmlFor="customerEmail">Email</Label>
-                                <Input
-                                    id="customerEmail"
-                                    type="email"
-                                    value={customerEmail}
-                                    onChange={(e) => setCustomerEmail(e.target.value)}
-                                    placeholder="Enter email address"
-                                />
-                            </div>
-
-                            <div className="space-y-2">
                                 <Label htmlFor="notes">Additional Notes</Label>
                                 <Textarea
                                     id="notes"
@@ -1057,35 +1045,18 @@ export function SalesPage() {
                                 />
                             </div>
 
-                            {/* Restaurant Order Option */}
+                            {/* Special Instructions for restaurant orders */}
                             {activeBusinessAccount?.business_type === "restaurant" && (
-                                <>
-                                    <div className="flex items-center gap-2 p-3 bg-orange-50 rounded-lg border border-orange-200">
-                                        <input
-                                            type="checkbox"
-                                            id="isRestaurantOrder"
-                                            checked={isRestaurantOrder}
-                                            onChange={(e) => setIsRestaurantOrder(e.target.checked)}
-                                            className="w-4 h-4"
-                                        />
-                                        <label htmlFor="isRestaurantOrder" className="text-sm font-medium text-gray-700">
-                                            🍽️ Create Order Token
-                                        </label>
-                                    </div>
-
-                                    {isRestaurantOrder && (
-                                        <div className="space-y-2">
-                                            <Label htmlFor="specialInstructions">Special Instructions</Label>
-                                            <Textarea
-                                                id="specialInstructions"
-                                                value={specialInstructions}
-                                                onChange={(e) => setSpecialInstructions(e.target.value)}
-                                                placeholder="E.g., No peanuts, Extra sauce, Mild spice..."
-                                                rows={2}
-                                            />
-                                        </div>
-                                    )}
-                                </>
+                                <div className="space-y-2">
+                                    <Label htmlFor="specialInstructions">Special Instructions</Label>
+                                    <Textarea
+                                        id="specialInstructions"
+                                        value={specialInstructions}
+                                        onChange={(e) => setSpecialInstructions(e.target.value)}
+                                        placeholder="E.g., No peanuts, Extra sauce, Mild spice..."
+                                        rows={2}
+                                    />
+                                </div>
                             )}
                         </CardContent>
                     </Card>

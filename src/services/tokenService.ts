@@ -334,90 +334,38 @@ export async function updateTokenQueuePosition(
 }
 
 /**
- * Print token receipt
+ * Print token receipt — shows only the token number, auto-closes after print
  */
-export function printTokenReceipt(
-  tokenNumber: number,
-  customerName: string,
-  orderItems: string,
-  totalAmount: number,
-  notes?: string
-) {
-  const printWindow = window.open('', '', 'width=400,height=600');
+export function printTokenReceipt(tokenNumber: number) {
+  const printWindow = window.open('', '', 'width=300,height=300');
   if (!printWindow) {
     console.error('Failed to open print window');
     return;
   }
 
-  const receiptHTML = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: monospace; margin: 0; padding: 10px; }
-        .receipt { max-width: 250px; margin: 0 auto; }
-        .header { text-align: center; font-weight: bold; margin-bottom: 20px; }
-        .token-number { font-size: 48px; text-align: center; font-weight: bold; margin: 20px 0; }
-        .divider { text-align: center; margin: 10px 0; }
-        .section { margin: 10px 0; }
-        .label { font-weight: bold; }
-        .items { white-space: pre-wrap; margin: 10px 0; }
-        .footer { text-align: center; margin-top: 20px; font-size: 12px; }
-        @media print {
-          body { margin: 0; padding: 5mm; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="receipt">
-        <div class="header">ORDER TICKET</div>
-        
-        <div class="token-number">#${tokenNumber}</div>
-        
-        <div class="divider">-----------------------</div>
-        
-        <div class="section">
-          <div class="label">Customer:</div>
-          <div>${customerName || 'Guest'}</div>
-        </div>
-        
-        <div class="divider">-----------------------</div>
-        
-        <div class="section">
-          <div class="label">Order:</div>
-          <div class="items">${orderItems}</div>
-        </div>
-        
-        ${notes ? `
-        <div class="divider">-----------------------</div>
-        <div class="section">
-          <div class="label">Special Instructions:</div>
-          <div>${notes}</div>
-        </div>
-        ` : ''}
-        
-        <div class="divider">-----------------------</div>
-        
-        <div class="section">
-          <div class="label">Total:</div>
-          <div>₹${totalAmount.toFixed(2)}</div>
-        </div>
-        
-        <div class="footer">
-          <p>${new Date().toLocaleString()}</p>
-          <p>Thank you!</p>
-        </div>
-      </div>
-      
-      <script>
-        window.print();
-        window.onafterprint = function() {
-          window.close();
-        };
-      </script>
-    </body>
-    </html>
-  `;
+  const receiptHTML = `<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: monospace; display: flex; align-items: center; justify-content: center; height: 100vh; }
+    .wrapper { text-align: center; }
+    .label { font-size: 14px; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 8px; }
+    .token { font-size: 96px; font-weight: bold; line-height: 1; }
+    @media print { body { height: auto; padding: 10mm; } }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="label">Order Token</div>
+    <div class="token">#${tokenNumber}</div>
+  </div>
+  <script>
+    window.print();
+    window.onafterprint = function() { window.close(); };
+  </script>
+</body>
+</html>`;
 
   printWindow.document.write(receiptHTML);
   printWindow.document.close();
