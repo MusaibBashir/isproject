@@ -7,7 +7,7 @@ import { Label } from "../components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Textarea } from "../components/ui/textarea";
 import { toast } from "sonner";
-import { Plus, Edit2, Trash2, X, Check, Flame, Leaf } from "lucide-react";
+import { Plus, Edit2, Trash2, X, Check, Flame, Leaf, Search } from "lucide-react";
 import { PageContainer } from "../components/layout/PageContainer";
 
 interface MenuItem {
@@ -38,6 +38,9 @@ export function RestaurantMenuPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [formData, setFormData] = useState({
     item_name: "",
     category: "",
@@ -92,20 +95,21 @@ export function RestaurantMenuPage() {
   };
 
   const handleAddCategory = async () => {
-    const categoryName = prompt("Enter new category name:");
-    if (!categoryName) return;
+    if (!newCategoryName.trim()) return;
 
     try {
       const { error } = await supabase.from("menu_categories").insert([
         {
           business_account_id: activeBusinessAccount!.id,
-          category_name: categoryName,
+          category_name: newCategoryName.trim(),
           sort_order: categories.length,
         },
       ]);
 
       if (error) throw error;
       toast.success("Category added");
+      setNewCategoryName("");
+      setShowCategoryModal(false);
       fetchMenuData();
     } catch (error) {
       console.error("Error adding category:", error);
@@ -226,10 +230,13 @@ export function RestaurantMenuPage() {
     }
   };
 
-  const filteredItems =
-    selectedCategory === "All"
-      ? menuItems
-      : menuItems.filter((item) => item.category === selectedCategory);
+  const filteredItems = menuItems
+    .filter((item) => selectedCategory === "All" || item.category === selectedCategory)
+    .filter((item) =>
+      searchQuery.trim() === "" ||
+      item.item_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
   if (loading) {
     return (
@@ -245,10 +252,10 @@ export function RestaurantMenuPage() {
     <PageContainer>
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-4">
           <h1 className="text-4xl font-bold">Restaurant Menu</h1>
           <div className="flex gap-2">
-            <Button onClick={handleAddCategory} variant="outline">
+            <Button onClick={() => setShowCategoryModal(true)} variant="outline">
               + Add Category
             </Button>
             <Button
@@ -271,6 +278,17 @@ export function RestaurantMenuPage() {
               Add Item
             </Button>
           </div>
+        </div>
+
+        {/* Search Bar */}
+        <div className="relative mb-6">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search items by name or description..."
+            className="pl-9"
+          />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -318,8 +336,8 @@ export function RestaurantMenuPage() {
               filteredItems.map((item) => (
                 <Card
                   key={item.id}
-                  className={`${
-                    !item.is_available ? "opacity-60 bg-gray-50" : ""
+                  className={`border-l-4 transition-opacity ${
+                    item.is_available ? "border-l-green-500" : "opacity-60 bg-gray-50 border-l-gray-300"
                   }`}
                 >
                   <CardContent className="pt-6">
@@ -361,12 +379,13 @@ export function RestaurantMenuPage() {
                           onClick={() => handleToggleAvailability(item.id, item.is_available)}
                           variant="outline"
                           size="sm"
+                          className={item.is_available ? "text-green-600 border-green-300 hover:bg-green-50" : "text-gray-500 hover:bg-gray-100"}
                           title={item.is_available ? "Mark unavailable" : "Mark available"}
                         >
                           {item.is_available ? (
-                            <Check className="w-4 h-4" />
+                            <><Check className="w-3 h-3 mr-1" />On</>
                           ) : (
-                            <X className="w-4 h-4" />
+                            <><X className="w-3 h-3 mr-1" />Off</>
                           )}
                         </Button>
                         <Button
@@ -392,6 +411,52 @@ export function RestaurantMenuPage() {
             )}
           </div>
         </div>
+
+        {/* Add Category Modal */}
+        {showCategoryModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <Card className="w-full max-w-sm mx-4">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle>Add Category</CardTitle>
+                <button
+                  onClick={() => { setShowCategoryModal(false); setNewCategoryName(""); }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="category_name">Category Name</Label>
+                  <Input
+                    id="category_name"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="e.g., Starters, Mains, Desserts"
+                    onKeyDown={(e) => e.key === "Enter" && handleAddCategory()}
+                    autoFocus
+                  />
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => { setShowCategoryModal(false); setNewCategoryName(""); }}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleAddCategory}
+                    className="flex-1 bg-green-600 hover:bg-green-700"
+                    disabled={!newCategoryName.trim()}
+                  >
+                    Add Category
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Add/Edit Form Modal */}
         {showForm && (

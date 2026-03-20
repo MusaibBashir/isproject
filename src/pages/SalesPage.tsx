@@ -534,6 +534,33 @@ export function SalesPage() {
                 // For card/UPI: receipt was already printed and cart was already reset
                 // immediately after payment. Just propagate failure so the caller can toast.
                 if (!success) throw new Error("DB record failed");
+
+                // Create token for restaurant orders in UPI/card flow
+                if (isRestaurantOrder && activeBusinessAccount && saleResult.saleId) {
+                    try {
+                        const tokenResult = await createOrderToken({
+                            sale_id: saleResult.saleId,
+                            business_account_id: activeBusinessAccount.id,
+                            customer_name: customerName,
+                            order_items: items.map(item => `${item.name} x${item.quantity}`).join(", "),
+                            notes: specialInstructions,
+                            is_restaurant_order: true
+                        });
+                        if (tokenResult.success) {
+                            const itemsStr = items.map(item => `${item.name} x${item.quantity}`).join("\n");
+                            printTokenReceipt(
+                                tokenResult.data.token_number,
+                                customerName,
+                                itemsStr,
+                                grandTotal,
+                                specialInstructions
+                            );
+                            toast.success(`Order #${tokenResult.data.token_number} created!`);
+                        }
+                    } catch (error) {
+                        console.error("Token creation error:", error);
+                    }
+                }
                 return;
             }
 

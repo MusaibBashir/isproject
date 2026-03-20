@@ -94,7 +94,7 @@ export function HamburgerMenu() {
           </span>
         </div>
 
-        <div className="flex flex-col gap-1 mt-2">
+        <div className="flex flex-col gap-1 mt-2 flex-1 overflow-y-auto pb-4">
           {menuItems.map((item, index) => {
             const Icon = item.icon;
             return (
