@@ -163,7 +163,7 @@ export function KitchenDisplaySystem() {
     preparing: tokens.filter(t => t.status === 'preparing'),
     prepared: tokens.filter(t => t.status === 'prepared'),
     ready: tokens.filter(t => t.status === 'ready'),
-    ordered: tokens.filter(t => t.status === 'ordered')
+    ordered: tokens.filter(t => t.status === 'ordered' || t.status === 'confirmed')
   };
 
   return (
@@ -173,7 +173,7 @@ export function KitchenDisplaySystem() {
       {/* Status Summary */}
       <div className="grid grid-cols-4 gap-4 mb-8">
         <Card className="bg-blue-600 p-4">
-          <div className="text-sm font-semibold">Ordered</div>
+          <div className="text-sm font-semibold">New Orders</div>
           <div className="text-3xl font-bold">{groupedTokens.ordered.length}</div>
         </Card>
         <Card className="bg-orange-500 p-4">

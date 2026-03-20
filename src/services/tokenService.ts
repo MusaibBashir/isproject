@@ -216,7 +216,8 @@ export function subscribeToTokenStatusUpdates(
       {
         event: 'INSERT',
         schema: 'public',
-        table: 'token_status_history'
+        table: 'order_tokens',
+        filter: `business_account_id=eq.${businessAccountId}`
       },
       onUpdate
     )
